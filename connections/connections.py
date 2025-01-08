@@ -1,61 +1,129 @@
-from typing import List, Tuple
-from serial.tools.list_ports import comports
+import re
+import threading
+import time
+from typing import List, Optional
 from serial import Serial
-from easy_scpi.scpi_instrument import SCPI_Instrument
-from config import Config
-from connections.utilities import baudRateDetector
+from serial.tools.list_ports import comports
+from serial.tools.list_ports_common import ListPortInfo
+from instruments import Instrument_Wrapper, SCPI_Info, custom_instr_handler
+from .utilities import detect_baud_rate, validate_response
+from config import Config, comm_mode
+
 
 class Connections:
     """
-    A class to manage connections to SCPI instruments.
+    The Connections class manages a collection of instruments connected via serial ports. It provides methods to verify the
+    connected instruments, find a specific instrument by name, and fetch all instruments based on a list of aliases(that are names or even serial numbers).
     Attributes:
-    -----------
-    Instruments : List[SCPI_Instrument]
-        A list to store connected SCPI instruments.
+        _lock (threading.Lock): A lock to ensure thread-safe operations on the Instruments list.
+        Instruments (List[Instrument_Wrapper]): A list of wrapped SCPI instruments.
     Methods:
-    --------
-    fetchInstruments():
-        Class method to fetch and store all SCPI instruments based on configuration.
-    findInstrument(cls, matchingName: str) -> Tuple[str, int]:
-        Static method to find a specific instrument by its name.
-    findAllInstruments(cls, curList: List[str]) -> List[SCPI_Instrument]:
-        Static method to find all instruments from a given list of names.
+        verify_instruments():
+            Verifies the connected instruments by sending an identification query and validating the response.
+            Removes instruments that do not respond correctly.
+        find_instrument(matchingName: str) -> Optional[SCPI_Info]:
+            Finds an instrument connected to a serial port that matches the given name.
+        fetch_all_instruments(cls, curAliasesList: List[str]) -> None:
+            Fetches all instruments based on the provided list of aliases.
     """
-    Instruments: List[SCPI_Instrument] = []
 
-    @classmethod
-    def fetchInstruments(cls):
-        cls.Instruments = cls.findAllInstruments(cls, Config.instrAliasesList)
+    _lock = threading.Lock()
+    InstrumentsList: List[Instrument_Wrapper] = []
 
     @staticmethod
-    def findInstrument(cls,matchingName: str) -> Tuple[str, int]:
-        toReturn: Tuple[str, int] = None
+    def verify_instruments() -> None:
+        if Config.communication_mode == comm_mode.pyVisa:
+            for instr in Connections.InstrumentsList:
+                try:
+                    instr.scpi_instrument.id()
+                except RuntimeError:
+                    Connections.InstrumentsList.remove(instr)
+        elif Config.communication_mode == comm_mode.serial:
+            for instr in Connections.InstrumentsList:
+                try:
+                    instr.com_obj.open()
+                    instr.com_obj.write(b"*IDN?")
+                    time.sleep(instr.timeout)
+                    response: str = instr.com_obj.read(
+                        instr.com_obj.in_waiting
+                    ).decode()
+                    instr.com_obj.close()
+                    if not validate_response(response):
+                        Connections.InstrumentsList.remove(instr)
+                except:
+                    Connections.InstrumentsList.remove(instr)
+
+    @staticmethod
+    def find_instrument(
+        matchingName: str, curLockedPorts: List[str]
+    ) -> Optional[SCPI_Info]:
+        """
+        Finds an instrument connected to a serial port that matches the given name.
+        Args:
+            matchingName (str): The name to match against the instrument's identification string.
+        Returns:
+            Optional[SCPI_Info]: An SCPI_Info object containing the port, baud rate, and identification string of the matching instrument,
+                                 or None if no matching instrument is found.
+        """
+        toReturn: Optional[SCPI_Info] = None
 
         # Obtain all ports
-        ports: List[comports] = comports()
+        ports: List[ListPortInfo] = comports()
+        instrTimeout: int = 2
+        # Filter
+        ports_device: List[str] = [
+            port[0] for port in ports if port.device not in curLockedPorts
+        ]
 
         # Find BR for each port
-        for port, desc, hwid in sorted(ports):
-            detected_BR: int = baudRateDetector.detect_baud_rate(port)
+        for port in ports_device:
+            detected_BR: int = baudRateDetector.detect_baud_rate(port=port, timeout=1)
             if detected_BR is not None:
                 # Found suitable baud rate
                 with Serial(port, detected_BR) as curSerial:
                     # Send IDN query
-                    curSerial.write(f"*IDN?{Config.charTerminator}".encode(ascii))
+                    curSerial.read(curSerial.in_waiting)  # flush
+                    curSerial.write(b"*IDN?")
+                    time.sleep(instrTimeout)
                     curIdnOput: str = curSerial.read(curSerial.in_waiting).decode()
+                    # Strip special characters and "CTS" substring
+                    curIdnOput = re.sub(r"[^a-zA-Z0-9,-]+|CTS", "", curIdnOput)
                     curSerial.close()
+
                     # Check if the name matches
                     if matchingName in curIdnOput:
-                        toReturn = (curSerial.port, detected_BR)
+                        toReturn = SCPI_Info(
+                            port=port,
+                            baud_rate=detected_BR,
+                            idn=curIdnOput,
+                            alias=matchingName,
+                        )
+                        break
         return toReturn
 
-    @staticmethod
-    def findAllInstruments(cls,curList: List[str]) -> List[SCPI_Instrument]:
-        SCPI_Instruments: List[SCPI_Instrument] = []
-        for instr in curList:
-            curSerial: Tuple[str, int] = cls.findInstrument(cls,instr)
-            if curSerial is not None:
-                SCPI_Instruments.append(
-                    SCPI_Instrument(port=curSerial[0], baud_rate=str(curSerial[1]))
+    @classmethod
+    def fetch_all_instruments(cls, curAliasesList: List[str]) -> None:
+        """
+        Fetches all instruments based on the provided list of aliases.
+
+        This method iterates over the provided list of instrument aliases, finds the corresponding
+        SCPI instrument information, creates SCPI_Instrument instances, and wraps them in
+        Instrument_Wrapper instances. The wrapped instruments are then appended to the class's
+        Instruments list.
+
+        Args:
+            curAliasesList (List[str]): A list of instrument aliases to fetch.
+        """
+        with Connections._lock:
+            curLockedPorts: List[str] = [
+                instr.scpi_instrument.port() for instr in Connections.InstrumentsList
+            ]
+            for instr in curAliasesList:
+                SCPIInfo: Optional[SCPI_Info] = cls.find_instrument(
+                    instr, curLockedPorts
                 )
-        return SCPI_Instruments
+                if SCPIInfo is not None:
+                    curInstrumentWrapper: Instrument_Wrapper = custom_instr_handler(
+                        SCPIInfo
+                    )
+                    cls.InstrumentsList.append(curInstrumentWrapper)

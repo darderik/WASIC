@@ -1,0 +1,9 @@
+[
+    {
+        "port": "COM6",
+        "baud_rate": 115200,
+        "idn": "Raspberry Pi SPI 1.0",
+        "alias": "Raspberry",
+        "timeout": 3000
+    }
+]

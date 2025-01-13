@@ -44,7 +44,7 @@ def detect_baud_rate(
             ser.baudrate = baudrate
             if data is not None:
                 ser.write(data)
-                time.sleep(timeout)
+                time.sleep(timeout / 1000)
             response = ser.read(ser.in_waiting)
             if validate_response(response):
                 if print_response or print_all:

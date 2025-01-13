@@ -10,8 +10,6 @@ class comm_mode(Enum):
 class Config:
     # Aliases to look for while searching for instruments
     instrAliasesList: List[str] = ["Model 2182", "Model 2000", "Raspberry"]
-    charTerminator: str = "\n\r"
     # If false, instruments will need to be added manually on the Connection class
-    autoUpdate: bool = False
-    maxInstruments: int = 2
     communication_mode: comm_mode = comm_mode.pyVisa  # 0 pyVisa, 1 serial
+    instrument_config_datapath: str = "data\\instr\\instruments.json"

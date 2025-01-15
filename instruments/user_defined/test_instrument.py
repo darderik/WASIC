@@ -33,13 +33,6 @@ class RaspberrySIM(Instrument):
             ),
         ]
 
-    def read(self) -> str:
-        """
-        Read data from the instrument.
-        """
-        curStr: str = super().read()
-        return curStr
-
     ## End custom code, specific to instrument
     @property
     def voltp(self):

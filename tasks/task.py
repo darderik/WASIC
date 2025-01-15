@@ -2,6 +2,8 @@ from easy_scpi import Instrument
 from typing import List, Callable, Dict, Any, Optional
 from threading import Thread, Event, Lock
 from instruments import Instrument_Entry
+from .structures import ChartData
+from connections import Connections
 
 
 class Task:
@@ -23,8 +25,8 @@ class Task:
         self,
         name: str,
         description: str,
-        instrs: List[Optional[Instrument_Entry]],
-        function: Callable[[Dict[str, Any], Event], None],
+        instrs_aliases: List[str],
+        function: Callable[[List[ChartData], Event], None],
     ):
         """
         Initializes a Task instance.
@@ -37,14 +39,13 @@ class Task:
         """
         self.name: str = name
         self.description: str = description
-        self.instruments: List[Optional[Instrument_Entry]] = (
-            instrs  # Order is important
-        )
-        self.function: Callable[[Dict[str, Any], Event], None] = function
-        self.data: Dict[str, Any] = {}
+        self.instr_aliases: List[str] = instrs_aliases
+        self.function: Callable[[List[ChartData], Event], None] = function
+        self.data: List[ChartData] = []
         self.exit_flag: Event = Event()
         self.thread_handle: Optional[Thread] = None
         self.lock: Lock = Lock()
+        self.instruments: List[Optional[Instrument_Entry]] = []
 
     def _spawn(self) -> None:
         """
@@ -69,6 +70,14 @@ class Task:
             self.exit_flag.set()
             self.thread_handle.join()
             self.thread_handle = None
+
+    def has_instruments(self) -> bool:
+        aliases: List[str] = self.instr_aliases
+        for alias in aliases:
+            instr = Connections.get_instrument(alias)
+            if instr is None:
+                return False
+        return True
 
 
 class Tasks:
@@ -102,6 +111,15 @@ class Tasks:
             task (Optional[Task]): The task to set as running, or None to indicate no task is running.
         """
         cls._is_running = task
+
+    @classmethod
+    def update_instruments(cls) -> None:
+        for tsk in cls.tasks_list:
+            tsk.instruments = []
+            for instr_alias in tsk.instr_aliases:
+                instr = Connections.get_instrument(instr_alias)
+                if instr is not None:
+                    tsk.instruments.append(instr)
 
     @classmethod
     def run_task(cls, name: str) -> None:

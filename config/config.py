@@ -9,7 +9,9 @@ class comm_mode(Enum):
 
 class Config:
     # Aliases to look for while searching for instruments
-    instrAliasesList: List[str] = ["Model 2182", "Model 2000", "Raspberry"]
+    instrAliasesList: List[str] = ["Raspberry"]
     # If false, instruments will need to be added manually on the Connection class
     communication_mode: comm_mode = comm_mode.pyVisa  # 0 pyVisa, 1 serial
     instrument_config_datapath: str = "data\\instr\\instruments.json"
+    # Default timeout for instrument communication
+    default_timeout: float = 1.5

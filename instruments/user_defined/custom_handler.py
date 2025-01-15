@@ -15,7 +15,8 @@ def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
         newSCPI = RaspberrySIM(scpi_info)
     else:
         newSCPI = SCPI_Instrument(
-            port=scpi_info.port, baud_rate=scpi_info.baud_rate, scpi_info=scpi_info
+            port=scpi_info.port,
+            baud_rate=scpi_info.baud_rate,
         )
 
     newComObj: Serial = Serial(scpi_info.port, scpi_info.baud_rate)  # TODO timeout?

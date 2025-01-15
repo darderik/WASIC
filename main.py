@@ -16,20 +16,21 @@ def main():
 
     # Manually add for debug
     try:
-        # Craft SCPI Info
-        scpi_info: SCPI_Info = SCPI_Info(
-            port="COM5", baud_rate=115200, idn="Raspberry Pi SPI 1.0", alias="Raspberry"
-        )
-        curInWrapper: Instrument_Entry = Instrument_Entry(
-            scpi_info,
-            Serial(scpi_info.port, scpi_info.baud_rate),
-            scpi_instrument=RaspberrySIM(scpi_info),
-        )
-        curInWrapper.com_obj.close()
-        curInWrapper.scpi_instrument.connect()
-        curInWrapper.scpi_instrument.init_properties()
-
-        Connections.InstrumentsList.append(curInWrapper)
+        pass
+    #        # Craft SCPI Info
+    #        scpi_info: SCPI_Info = SCPI_Info(
+    #            port="COM5", baud_rate=115200, idn="Raspberry Pi SPI 1.0", alias="Raspberry"
+    #        )
+    #        curInWrapper: Instrument_Entry = Instrument_Entry(
+    #            scpi_info,
+    #            Serial(scpi_info.port, scpi_info.baud_rate),
+    #            scpi_instrument=RaspberrySIM(scpi_info),
+    #        )
+    #        curInWrapper.com_obj.close()
+    #        curInWrapper.scpi_instrument.connect()
+    #        curInWrapper.scpi_instrument.init_properties()
+    #
+    #        Connections.InstrumentsList.append(curInWrapper)
     except:
         pass
     ## end debug section

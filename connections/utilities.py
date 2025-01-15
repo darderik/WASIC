@@ -27,7 +27,7 @@ BAUDRATES = (
 def detect_baud_rate(
     port,
     data=None,
-    timeout=DEFAULT_TIMEOUT,
+    timeout: float = DEFAULT_TIMEOUT,
     scan_all=False,
     print_response=False,
     print_all=False,
@@ -36,7 +36,7 @@ def detect_baud_rate(
     data = (
         data
         if isinstance(data, bytes)
-        else data.encode() if data is not None else b"AT"
+        else data.encode() if data is not None else b"*IDN?\n"
     )
     detected_baud_rate = None
     with serial.Serial(port, timeout=timeout) as ser:
@@ -44,7 +44,7 @@ def detect_baud_rate(
             ser.baudrate = baudrate
             if data is not None:
                 ser.write(data)
-                time.sleep(timeout / 1000)
+                time.sleep(timeout)
             response = ser.read(ser.in_waiting)
             if validate_response(response):
                 if print_response or print_all:

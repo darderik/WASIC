@@ -55,7 +55,23 @@ class Instrument_Entry:
         else:
             if not self.com_obj.is_open:
                 self.com_obj.open()
-                time.sleep(self.data.timeout / 1000)
+                time.sleep(self.data.timeout)
+                toReturn = self.com_obj.read_all().decode()
+            else:
+                raise Exception(RuntimeError("Serial port is already open."))
+        return toReturn
+
+    def query_wrapper(self, command) -> str:
+        # The CLS handling should be implemented in the children classes
+        # Refer to test_instrument example
+        toReturn: str = ""
+        if Config.communication_mode == comm_mode.pyVisa:
+            toReturn = self.scpi_instrument.query(command)
+        else:
+            if not self.com_obj.is_open:
+                self.com_obj.open()
+                time.sleep(self.data.timeout)
+                self.com_obj.write(command.encode())
                 toReturn = self.com_obj.read_all().decode()
             else:
                 raise Exception(RuntimeError("Serial port is already open."))

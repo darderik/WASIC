@@ -9,9 +9,13 @@ from easy_scpi import Instrument
 import time
 from threading import Thread, Event, Lock
 from ..task import Task, Tasks
+from ..structures import ChartData
+from typing import List, Optional
 
 
-def mytask_1(data: Dict, exit_flag: Event) -> None:
+def mytask_1(data: List[ChartData], exit_flag: Event) -> None:
+    # Check instruments not
+
     # Get the instrument entry for "raspberry" from Connections
     curRPI_Entry: Optional[Instrument_Entry] = Connections.get_instrument("raspberry")
 
@@ -25,29 +29,30 @@ def mytask_1(data: Dict, exit_flag: Event) -> None:
         # Cast the SCPI instrument to a RaspberrySIM type
         # So we can access custom properties and methods
         curRPI_cast: RaspberrySIM = curRPI
-        data["x"] = list()
+        cur_chart_data_1: ChartData = ChartData("Example Chart", list(), list())
+        data.append(cur_chart_data_1)
         # Infinite loop to continuously update the instrument
         while True:
             if exit_flag.is_set():
+                # Do something with data
                 break
             # Generate a random integer between 0 and 100
-            curInt: int = random.randint(0, 100)
-
-            # Append the random integer to the list in dataProxy
-            data["x"].append(curInt)
+            curRPI_cast.voltp = random.randint(0, 100)
+            curRead: float = float(curRPI_cast.voltp)
+            # Append the random integer to the list in dataProxy. We want only an axis, thus scatter
+            cur_chart_data_1.y.append(curRead)
 
             # Set the voltage property of the RaspberrySIM instrument to the random integer
-            curRPI_cast.voltp = curInt
 
             # Sleep for 2 seconds before the next iteration
-            time.sleep(2)
+            time.sleep(1e-6)
 
 
 def init_mytask_1():
     newTask: Task = Task(
-        "My Task 1",
-        "This is the first task",
-        [Connections.get_instrument("raspberry")],
-        mytask_1,
+        name="My Task 1",
+        description="This is the first task",
+        instrs_aliases=["raspberry"],
+        function=mytask_1,
     )
     Tasks.tasks_list.append(newTask)

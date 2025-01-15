@@ -1,8 +1,8 @@
 [
     {
-        "port": "COM6",
+        "port": "COM5",
         "baud_rate": 115200,
-        "idn": "Raspberry Pi SPI 1.0",
+        "idn": "Keithley,RaspberryPISimulator,12345,10",
         "alias": "Raspberry",
         "timeout": 3000
     }

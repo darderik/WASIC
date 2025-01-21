@@ -4,7 +4,8 @@ import pandas as pd
 from config import Config
 from easy_scpi import Instrument
 from typing import List
-from instruments import Instrument_Entry, RaspberrySIM
+from instruments import Instrument_Entry
+from user_defined import RaspberrySIM
 from serial import Serial
 import time
 from tasks import Tasks

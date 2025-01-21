@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from typing import List
 from easy_scpi import Instrument
-from ..instrument_entry import SCPI_Info
-from ..properties import property_info
+from instruments import SCPI_Info
+from instruments import property_info
 
 # Replace "RaspberrySIM" with the name of the instrument class
 

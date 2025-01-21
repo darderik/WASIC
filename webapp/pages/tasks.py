@@ -6,25 +6,50 @@ from dataclasses import dataclass
 from connections import Connections
 from instruments.properties import property_info
 from easy_scpi import Instrument
-from instruments import RaspberrySIM
+from user_defined import RaspberrySIM
 from tasks import Task, Tasks
 from tasks import ChartData
+import pandas as pd
 
 
-def populate_scatter(chartData, scatter: DeltaGenerator) -> None:
-    if chartData.x == []:
+def populate_scatter(chartData: ChartData, scatter: DeltaGenerator) -> None:
+    minimumLength: int = min(len(chartData.x), len(chartData.y))
+    if len(chartData.x) == 0:  # Plot only y
         # Plot only scatter
-        scatter.scatter_chart(curChartData.y)
+        scatter.scatter_chart(
+            [round(curVal, 2) for curVal in chartData.y],
+            x_label=chartData.x_label,
+            y_label=chartData.y_label,
+        )
     else:
         # Plot scatter with x y
-        scatter.scatter_chart({"x": curChartData.x, "y": curChartData.y})
+        # This check is to avoid out of sync x - y values
+        newDataFrame = pd.DataFrame(
+            data={
+                "x": [round(curVal, 2) for curVal in chartData.x[:minimumLength]],
+                "y": [round(curVal, 2) for curVal in chartData.y[:minimumLength]],
+            }
+        )
+        scatter.scatter_chart(
+            newDataFrame,
+            x="x",
+            y="y",
+            x_label=chartData.x_label,
+            y_label=chartData.y_label,
+        )
+
+
+def set_custom_alias() -> None:
+    changedAlias: str = st.session_state["task_alias"]
+    Tasks._is_running.custom_alias = changedAlias
+
+
+# Check if a task is currently running
+is_task_running: bool = Tasks._is_running is not None
 
 
 # Set the main title of the page
 st.title("🔧 Tasks Selector")
-
-# Check if a task is currently running
-is_task_running: bool = Tasks._is_running is not None
 
 # Task selection widget
 with st.container():
@@ -78,35 +103,51 @@ with st.container():
             with st.expander("🔌 Instruments", expanded=True):
                 if cur_task.instruments != []:
                     for instr in cur_task.instruments:
-                        st.write(f"- **ID:** {instr.scpi_instrument.id}")
+                        st.write(f"- **ID:** {instr.data.idn}")
                 else:
                     st.write("No instruments associated with this task.")
 
-            # Stop Task Button
-            st.button(
-                "🛑 Stop Task",
-                on_click=Tasks.kill_task,
-                key="stop_task_button",
-                help="Stop the currently running task.",
-            )
+            # Stop Task Button, but first force the user to insert an alias for the task (will be contained in save file)
+            col_stop_task, col_custom_alias = st.columns([3, 1])
+            with col_custom_alias:
+                custom_alias: str = st.text_input(
+                    label="Insert Alias for Task",
+                    value="",
+                    key="task_alias",
+                    help="Insert alias BEFORE stopping the task.",
+                    on_change=set_custom_alias,
+                )
 
-        scatter_placeholder: DeltaGenerator = st.empty()
+            with col_stop_task:
+                st.button(
+                    "🛑 Stop Task",
+                    on_click=Tasks.kill_task,
+                    key="stop_task_button",
+                    help="Stop the currently running task.",
+                    disabled=custom_alias == "",
+                )
+
+        plots_list: List[DeltaGenerator] = []
+
         # Display Data Visualization
         with st.container():
-            st.markdown("---")
-            st.subheader("📈 Task Data")
-
+            for cur_chart in cur_task.data:
+                st.markdown("---")
+                st.subheader(f"📈 {cur_chart.name}")
+                # Placeholder for the scatter chart
+                scatter_placeholder = st.empty()
+                plots_list.append(scatter_placeholder)
             # TODO Shall allow to have multiple scatter. Dynamic array with the same amount of charts as the elements of the curdatalist list
             # Placeholder for the scatter chart
-            paused = st.toggle("Pause Data", False)
+            paused = st.checkbox("Pause Data", False)
             curDataList: List[ChartData] = Tasks._is_running.data
             # Continuously update the chart
             if not paused:
                 while Tasks._is_running is not None:
-                    for curChartData in curDataList:
-                        populate_scatter(curChartData, scatter_placeholder)
+                    for idx, curChartData in enumerate(curDataList):
+                        populate_scatter(curChartData, plots_list[idx])
                     # Pause loop button
                     time.sleep(2)
             else:
-                for curChartData in curDataList:
-                    populate_scatter(curChartData, scatter_placeholder)
+                for idx, curChartData in enumerate(curDataList):
+                    populate_scatter(curChartData, plots_list[idx])

@@ -4,6 +4,9 @@ from threading import Thread, Event, Lock
 from instruments import Instrument_Entry
 from .structures import ChartData
 from connections import Connections
+import json
+from config import Config
+import datetime
 
 
 class Task:
@@ -27,6 +30,10 @@ class Task:
         description: str,
         instrs_aliases: List[str],
         function: Callable[[List[ChartData], Event], None],
+        data: List[ChartData] = [],
+        exit_flag: Event = Event(),
+        instruments: List[Optional[Instrument_Entry]] = [],
+        custom_alias: str = "",
     ):
         """
         Initializes a Task instance.
@@ -40,12 +47,12 @@ class Task:
         self.name: str = name
         self.description: str = description
         self.instr_aliases: List[str] = instrs_aliases
-        self.function: Callable[[List[ChartData], Event], None] = function
-        self.data: List[ChartData] = []
-        self.exit_flag: Event = Event()
         self.thread_handle: Optional[Thread] = None
-        self.lock: Lock = Lock()
-        self.instruments: List[Optional[Instrument_Entry]] = []
+        self.data: List[ChartData] = data
+        self.exit_flag: Event = exit_flag
+        self.instruments: List[Optional[Instrument_Entry]] = instruments
+        self.function: Callable[[List[ChartData], Event], None] = function
+        self.custom_alias: str = custom_alias
 
     def _spawn(self) -> None:
         """
@@ -70,6 +77,27 @@ class Task:
             self.exit_flag.set()
             self.thread_handle.join()
             self.thread_handle = None
+        # Save chartdata to file(s)
+        for chart in self.data:
+            additional_file_name = f"{self.custom_alias}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+            json.dump(
+                {
+                    "x": chart.x,
+                    "y": chart.y,
+                    "raw_x": chart.raw_x,
+                    "raw_y": chart.raw_y,
+                    "x_label": chart.x_label,
+                    "y_label": chart.y_label,
+                },
+                open(
+                    file=f"{Config.data_charts_path}\\{chart.name}_{additional_file_name}.json",
+                    mode="w",
+                ),
+                skipkeys=True,
+                ensure_ascii=False,
+                indent=4,
+            )
+        self.data.clear()
 
     def has_instruments(self) -> bool:
         aliases: List[str] = self.instr_aliases
@@ -91,6 +119,12 @@ class Tasks:
 
     tasks_list: List[Task] = []
     _is_running: Optional[Task] = None
+    tasks_init_list: List[Callable] = []
+
+    @classmethod
+    def init_tasks(cls) -> None:
+        for init_task in cls.tasks_init_list:
+            init_task()
 
     @classmethod
     def is_running_get(cls) -> Optional[Task]:

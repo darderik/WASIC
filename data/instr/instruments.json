@@ -2,7 +2,7 @@
     {
         "port": "COM5",
         "baud_rate": 115200,
-        "idn": "Keithley,RaspberryPISimulator,12345,10",
+        "idn": "Keithley,Raspberry PI Simulator,12345,1.0",
         "alias": "Raspberry",
         "timeout": 3000
     }

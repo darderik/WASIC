@@ -5,7 +5,7 @@ from typing import List, Optional, Any
 from serial import Serial
 from serial.tools.list_ports import comports
 from serial.tools.list_ports_common import ListPortInfo
-from instruments import Instrument_Entry, SCPI_Info, custom_instr_handler
+from instruments import Instrument_Entry, SCPI_Info
 from easy_scpi import Instrument
 from .utilities import detect_baud_rate, validate_response
 from config import Config, comm_mode
@@ -50,7 +50,7 @@ class Connections:
         return None
 
     @classmethod
-    def get_instruments_aliases(cls) -> List[str]:
+    def get_instruments_aliases(cls, idn: bool = False) -> List[str]:
         """
         Returns a list of aliases of all instruments in the InstrumentsList.
 
@@ -58,7 +58,10 @@ class Connections:
             List[str]: A list of aliases of all instruments in the InstrumentsList.
         """
         with cls._instrument_lock:
-            return [instr.data.alias for instr in cls.InstrumentsList]
+            if not idn:
+                return [instr.data.alias for instr in cls.InstrumentsList]
+            else:
+                return [instr.data.idn for instr in cls.InstrumentsList]
 
     @classmethod
     def is_scpi_info_busy(cls, instr_info: SCPI_Info) -> bool:
@@ -147,8 +150,8 @@ class Connections:
                     time.sleep(instrTimeout)
                     idn_bytes = curSerial.read(curSerial.in_waiting)
                     idn_string = idn_bytes.decode().strip()
-                    # Strip special characters and "CTS" substring
-                    idn_string = re.sub(r"[^a-zA-Z0-9,-]+|CTS", "", idn_string)
+                    # Strip special characters
+                    # idn_string = re.sub(r"[^a-zA-Z0-9,-\s]", "", idn_string)
             except Exception as e:
                 continue  # Skip this port if any error occurs
             if matchingName.lower() in idn_string.lower():
@@ -181,6 +184,8 @@ class Connections:
                     alias, curLockedPorts
                 )
                 if SCPIInfo is not None:
+                    from user_defined import custom_instr_handler
+
                     instrument_entry: Optional[Instrument_Entry] = custom_instr_handler(
                         SCPIInfo
                     )
@@ -226,6 +231,8 @@ class Connections:
                     ]
                 for instr_info in instr_info_list:
                     if not cls.is_scpi_info_busy(instr_info):
+                        from user_defined import custom_instr_handler
+
                         instrument_entry: Optional[Instrument_Entry] = (
                             custom_instr_handler(instr_info)
                         )
@@ -243,4 +250,4 @@ class Connections:
                 raise RuntimeError(f"Failed to parse configuration file: {e}")
             except Exception as e:
                 # Handle other unforeseen exceptions
-                raise RuntimeError(f"Failed to load configuration: {e}")
+                Connections.fetch_all_instruments(Config.instrAliasesList)

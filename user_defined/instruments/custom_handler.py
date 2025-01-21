@@ -6,6 +6,12 @@ from serial import Serial
 from config import Config, comm_mode  # Add this line to import Config and comm_mode
 
 
+def check_init_properties(scpi_obj: SCPI_Instrument) -> bool:
+    return hasattr(scpi_obj, "init_properties") and callable(
+        getattr(scpi_obj, "init_properties")
+    )
+
+
 def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
     newSCPI: SCPI_Instrument = None
     curInstrumentWrapper: Optional[Instrument_Entry] = None
@@ -25,9 +31,7 @@ def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
         if Config.communication_mode == comm_mode.pyVisa:
             # Lock the instrument resource
             newSCPI.connect()
-            if hasattr(newSCPI, "init_properties") and callable(
-                getattr(newSCPI, "init_properties")
-            ):
+            if check_init_properties(newSCPI):
                 newSCPI.init_properties()
             curInstrumentWrapper = Instrument_Entry(
                 data=scpi_info,

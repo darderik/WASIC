@@ -88,6 +88,8 @@ class Task:
                     "raw_y": chart.raw_y,
                     "x_label": chart.x_label,
                     "y_label": chart.y_label,
+                    "info": chart.info,
+                    "custom_name": chart.custom_name,
                 },
                 open(
                     file=f"{Config.data_charts_path}\\{chart.name}_{additional_file_name}.json",

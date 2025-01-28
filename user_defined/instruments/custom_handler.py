@@ -1,15 +1,17 @@
 from easy_scpi.scpi_instrument import SCPI_Instrument
-from typing import Optional
+from typing import Optional, List
+from .K2000 import K2000
 from .test_instrument import RaspberrySIM
+from .RelayMatrix import RelayMatrix
 from instruments import Instrument_Entry, SCPI_Info
 from serial import Serial
 from config import Config, comm_mode  # Add this line to import Config and comm_mode
 
+init_properties_types: List[type] = [RaspberrySIM, K2000]
+
 
 def check_init_properties(scpi_obj: SCPI_Instrument) -> bool:
-    return hasattr(scpi_obj, "init_properties") and callable(
-        getattr(scpi_obj, "init_properties")
-    )
+    return type(scpi_obj) in init_properties_types
 
 
 def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
@@ -19,6 +21,10 @@ def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
     # The user can add new entries of SCPI instruments here
     if "Raspberry" in scpi_info.idn:
         newSCPI = RaspberrySIM(scpi_info)
+    elif "MODEL 2000".lower() in scpi_info.idn.lower():
+        newSCPI = K2000(scpi_info)
+    elif "RELAY MATRIX".lower() in scpi_info.idn.lower():
+        newSCPI = RelayMatrix(scpi_info)
     else:
         newSCPI = SCPI_Instrument(
             port=scpi_info.port,

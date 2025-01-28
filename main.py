@@ -29,11 +29,13 @@ from config import Config
 
 def main():
     # Init instruments
-    Connections.load_config()
+    # Connections.load_config()
+    # Manual instruments
 
     # Init tasks
     Tasks.init_tasks()
-
+    # Connections.fetch_all_instruments(Config.instrAliasesList)
+    # Connections.fetch_all_instruments(Config.instrAliasesList)
     # Path del file Streamlit
     script_path = os.path.abspath("streamlit_app.py")
 

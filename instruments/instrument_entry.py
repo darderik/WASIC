@@ -27,7 +27,6 @@ class SCPI_Info:
     baud_rate: int
     idn: str = ""
     alias: str = ""
-    timeout: int = 3000  # ms timeout
 
 
 @dataclass
@@ -55,7 +54,7 @@ class Instrument_Entry:
         else:
             if not self.com_obj.is_open:
                 self.com_obj.open()
-                time.sleep(self.data.timeout)
+                time.sleep(Config.default_timeout)
                 toReturn = self.com_obj.read_all().decode()
             else:
                 raise Exception(RuntimeError("Serial port is already open."))
@@ -70,7 +69,7 @@ class Instrument_Entry:
         else:
             if not self.com_obj.is_open:
                 self.com_obj.open()
-                time.sleep(self.data.timeout)
+                time.sleep(Config.default_timeout)
                 self.com_obj.write(command.encode())
                 toReturn = self.com_obj.read_all().decode()
             else:

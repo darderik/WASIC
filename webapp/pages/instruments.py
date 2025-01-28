@@ -13,8 +13,14 @@ def send_parameters(instr_properties: List[property_info]) -> None:
         unparsed_value: str = st.session_state[prop.alias + "_input"]
         supposed_type = prop.typecheck
         try:
-            parsed_value = supposed_type(unparsed_value)
-            if unparsed_value != prop.associated_getter():
+            if prop.typecheck != bool:
+                parsed_value = supposed_type(unparsed_value)
+            else:
+                parsed_value = Scpi_Property.val2bool(unparsed_value)
+            if (
+                parsed_value != prop.associated_getter()
+                and unparsed_value != prop.associated_getter()
+            ):
                 prop.associated_setter(parsed_value)
         except Exception:
             st.error(f"Error parsing value for {prop.alias}")
@@ -30,10 +36,7 @@ def instruments_page(alias: str) -> None:
         st.subheader(f"🔌 {instr_name}")
 
         # Display Properties if available
-        if (
-            cur_scpi_instrument.properties_list is not None
-            and len(cur_scpi_instrument.properties_list) > 0
-        ):
+        if len(cur_scpi_instrument.properties_list) > 0:
             instr_properties: List[property_info] = cur_scpi_instrument.properties_list
 
             # Table Headers

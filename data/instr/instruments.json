@@ -1,9 +1,8 @@
 [
     {
-        "port": "COM5",
+        "port": "COM6",
         "baud_rate": 115200,
-        "idn": "Keithley,Raspberry PI Simulator,12345,1.0",
-        "alias": "Raspberry",
-        "timeout": 3000
+        "idn": "DIIEM,Relay Matrix,0025001C3232511635323535,V1.0",
+        "alias": "Relay Matrix"
     }
 ]

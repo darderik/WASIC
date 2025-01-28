@@ -6,9 +6,6 @@ from easy_scpi import Instrument
 from typing import List
 from instruments import Instrument_Entry
 from user_defined import RaspberrySIM
-from serial import Serial
-import time
-from tasks import Tasks
 
 
 def verify_instruments(mode: int = 0):
@@ -25,7 +22,7 @@ def verify_instruments(mode: int = 0):
     st.session_state["instr_table"] = pd.DataFrame(
         {
             "Instrument Name": [
-                instr.data.alias for instr in Connections.InstrumentsList
+                instr.data.idn for instr in Connections.InstrumentsList
             ],
             "COM PORT": [
                 instr.scpi_instrument.port for instr in Connections.InstrumentsList
@@ -46,7 +43,7 @@ def send_command(instr_selected: Instrument_Entry, command: str, uid: str) -> No
             result: str = instr_selected.query_wrapper(command)
             st.session_state[
                 f"{uid}_buffer_output"
-            ] += f"{instr_selected.data.alias}: {command} --> {result}"
+            ] += f"{instr_selected.data.alias}: {command} --> {result}\n"
             st.success("Command executed successfully!")
         else:
             instr_selected.write_wrapper(command)

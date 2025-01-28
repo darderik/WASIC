@@ -1,4 +1,3 @@
-import re
 import threading
 import time
 from typing import List, Optional, Any
@@ -32,20 +31,17 @@ class Connections:
     @classmethod
     def get_instrument(cls, alias: str) -> Optional[Instrument_Entry]:
         """
-        Returns an Instrument_Entry object with the given alias.
+        Returns an Instrument_Entry object with similiar idn string.
 
         Args:
-            alias (str): The alias of the instrument to return.
+            alias (str): The match of the instrument.
 
         Returns:
-            Optional[Instrument_Entry]: An Instrument_Entry object with the given alias, or None if no instrument with that alias is found.
+            Optional[Instrument_Entry]: An Instrument_Entry object that matches the alias, or None if no instrument with that alias is found.
         """
         with cls._instrument_lock:
             for instr in cls.InstrumentsList:
-                if (
-                    alias.lower() in instr.data.alias.lower()
-                    or alias.lower() in instr.scpi_instrument.id.lower()
-                ):
+                if alias.lower() in instr.data.idn.lower():
                     return instr
         return None
 
@@ -100,8 +96,8 @@ class Connections:
                 for instr in cls.InstrumentsList:
                     try:
                         instr.com_obj.open()
-                        instr.com_obj.write(b"*IDN?")  # Send identification query
-                        time.sleep(instr.data.timeout)
+                        instr.com_obj.write(b"*IDN?\n")  # Send identification query
+                        time.sleep(Config.default_timeout)
                         response: str = instr.com_obj.read(
                             instr.com_obj.in_waiting
                         ).decode()
@@ -117,39 +113,30 @@ class Connections:
 
     @classmethod
     def find_instrument(
-        cls, matchingName: str, curLockedPorts: List[str]
+        cls, matchingName: str, com_ports: dict[str, int]
     ) -> Optional[SCPI_Info]:
         """
         Finds an instrument connected to a serial port that matches the given name.
 
         Args:
             matchingName (str): The name to match against the instrument's identification string.
-            curLockedPorts (List[str]): List of ports that are currently locked.
+            com_ports (dict[str, int]): Dictionary of available COM ports and their corresponding baud rates.
 
         Returns:
             Optional[SCPI_Info]: An SCPI_Info object containing the port, baud rate, and identification string of the matching instrument,
                                  or None if no matching instrument is found.
         """
-
-        ports: List[ListPortInfo] = comports()
         instrTimeout: float = Config.default_timeout
-        # Filter out locked ports
-        available_ports: List[str] = [
-            port.device for port in ports if port.device not in curLockedPorts
-        ]
-        for port in available_ports:
-            detected_BR: Optional[int] = detect_baud_rate(
-                port=port, timeout=instrTimeout
-            )
-            if detected_BR is None:
-                continue  # Unable to detect baud rate, skip to next port
+        for port in com_ports.keys():
+            cur_baud: int = com_ports[port]
             try:
-                with Serial(port, detected_BR, timeout=instrTimeout) as curSerial:
-                    curSerial.flushInput()
-                    curSerial.write(b"*IDN?")  # Send identification query
+                with Serial(port, cur_baud, timeout=instrTimeout) as curSerial:
+                    curSerial.write(b"\n\n")  # Flush
+                    time.sleep(instrTimeout / 2)
+                    curSerial.write(b"*IDN?\n")  # Send identification query
                     time.sleep(instrTimeout)
                     idn_bytes = curSerial.read(curSerial.in_waiting)
-                    idn_string = idn_bytes.decode().strip()
+                    idn_string = (idn_bytes.decode().split("\n"))[0].strip()
                     # Strip special characters
                     # idn_string = re.sub(r"[^a-zA-Z0-9,-\s]", "", idn_string)
             except Exception as e:
@@ -157,7 +144,7 @@ class Connections:
             if matchingName.lower() in idn_string.lower():
                 return SCPI_Info(
                     port=port,
-                    baud_rate=detected_BR,
+                    baud_rate=cur_baud,
                     idn=idn_string,
                     alias=matchingName,
                 )
@@ -176,13 +163,24 @@ class Connections:
             curAliasesList (List[str]): A list of instrument aliases to fetch.
         """
         with cls._instrument_lock:
+            # Busy ports
             curLockedPorts: List[str] = [
                 instr.scpi_instrument.port for instr in cls.InstrumentsList
             ]
+
+            # Create a list of all comports with correct baud rates
+            all_comports: dict[str, int] = {}
+            available_ports: List[str] = [
+                port for port in all_comports if port not in curLockedPorts
+            ]
+            # Populate all_comports with baud rates
+            for port in available_ports:
+                detected_BR: Optional[int] = detect_baud_rate(port)
+                if detected_BR is not None:
+                    all_comports[port] = detected_BR
+
             for alias in curAliasesList:
-                SCPIInfo: Optional[SCPI_Info] = cls.find_instrument(
-                    alias, curLockedPorts
-                )
+                SCPIInfo: Optional[SCPI_Info] = cls.find_instrument(alias, all_comports)
                 if SCPIInfo is not None:
                     from user_defined import custom_instr_handler
 
@@ -240,7 +238,7 @@ class Connections:
                             cls.InstrumentsList.append(instrument_entry)
                         else:
                             raise RuntimeError(
-                                f"Failed to create Instrument_Entry for instrument: {instr_info.alias}"
+                                f"Failed to create Instrument_Entry for instrument: {instr_info.idn}"
                             )
             except FileNotFoundError:
                 # No previous configuration found; fetch instruments based on configured aliases

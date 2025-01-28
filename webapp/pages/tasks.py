@@ -10,38 +10,13 @@ from user_defined import RaspberrySIM
 from tasks import Task, Tasks
 from tasks import ChartData
 import pandas as pd
-
-
-def populate_scatter(chartData: ChartData, scatter: DeltaGenerator) -> None:
-    minimumLength: int = min(len(chartData.x), len(chartData.y))
-    if len(chartData.x) == 0:  # Plot only y
-        # Plot only scatter
-        scatter.scatter_chart(
-            [round(curVal, 2) for curVal in chartData.y],
-            x_label=chartData.x_label,
-            y_label=chartData.y_label,
-        )
-    else:
-        # Plot scatter with x y
-        # This check is to avoid out of sync x - y values
-        newDataFrame = pd.DataFrame(
-            data={
-                "x": [round(curVal, 2) for curVal in chartData.x[:minimumLength]],
-                "y": [round(curVal, 2) for curVal in chartData.y[:minimumLength]],
-            }
-        )
-        scatter.scatter_chart(
-            newDataFrame,
-            x="x",
-            y="y",
-            x_label=chartData.x_label,
-            y_label=chartData.y_label,
-        )
+from webapp import plot_chart
 
 
 def set_custom_alias() -> None:
     changedAlias: str = st.session_state["task_alias"]
-    Tasks._is_running.custom_alias = changedAlias
+    if Tasks._is_running is not None:
+        Tasks._is_running.custom_alias = changedAlias
 
 
 # Check if a task is currently running
@@ -88,7 +63,7 @@ with st.container():
             )
 
     # Display task details and controls if a task is running
-    if is_task_running:
+    if is_task_running and Tasks._is_running is not None:
         with st.container():
             st.markdown("---")
             st.subheader("⚙️ Current Task")
@@ -145,9 +120,9 @@ with st.container():
             if not paused:
                 while Tasks._is_running is not None:
                     for idx, curChartData in enumerate(curDataList):
-                        populate_scatter(curChartData, plots_list[idx])
+                        plot_chart(curChartData, plots_list[idx])
                     # Pause loop button
                     time.sleep(2)
             else:
                 for idx, curChartData in enumerate(curDataList):
-                    populate_scatter(curChartData, plots_list[idx])
+                    plot_chart(curChartData, plots_list[idx])

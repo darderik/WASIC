@@ -9,6 +9,7 @@ from user_defined import RaspberrySIM
 from user_defined import init_mytask_1
 from tasks import Task, Tasks, ChartData
 from config import Config
+from user_defined import custom_instr_handler
 
 # Global variables
 #        # Craft SCPI Info

@@ -1,2 +1,1 @@
-from .config import Config
-from .config import comm_mode
+from .config import Config, comm_mode

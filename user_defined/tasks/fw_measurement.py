@@ -39,9 +39,11 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
     """Van der Pauw measurement task."""
     horizontal_resistance_chart: ChartData = ChartData(
         name="Horizontal Resistance",
+        y_label="Resistance (Ohm)",
     )
     vertical_resistance_chart: ChartData = ChartData(
         name="Vertical Resistance",
+        y_label="Resistance (Ohm)",
     )
     vdp_sheet_resistance_chart: ChartData = ChartData(
         name="Van der Pauw Resistivity",
@@ -65,6 +67,7 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
         return
     relay_matrix: RelayMatrix = relay_matrix_entry.scpi_instrument
     k2000: K2000 = k2000_entry.scpi_instrument
+    k2000.disable_beep()
 
     newThreadProcessor: Thread = spawn_data_processor(
         data, exit_flag, generic_processor
@@ -77,11 +80,13 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
         # Measure horizontal resistance
         relay_matrix.switch_commute_exclusive("a1", "b2", "c3", "d4")
         relay_matrix.opc()
+        time.sleep(0.5)
         horizontal_resistance: float = k2000.read_measurement()
 
         # Measure vertical resistance
         relay_matrix.switch_commute_exclusive("a2", "b3", "c4", "d1")
         relay_matrix.opc()
+        time.sleep(0.5)
         vertical_resistance: float = k2000.read_measurement()
 
         # Update the charts
@@ -96,7 +101,7 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
             newThreadProcessor.join()
             break  # Exit the loop if the exit flag is set
 
-        time.sleep(1)
+        time.sleep(2)
 
 
 def init_4w_vdp() -> None:

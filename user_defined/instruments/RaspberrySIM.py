@@ -3,6 +3,7 @@ from typing import List
 from easy_scpi import Instrument
 from instruments import SCPI_Info
 from instruments import property_info
+from config import Config
 
 # Replace "RaspberrySIM" with the name of the instrument class
 
@@ -81,3 +82,7 @@ class RaspberrySIM(Instrument):
         Sets the voltage of the instrument.
         """
         self.voltage(volts)
+
+
+# Mandatory append to register instrument class with its alias
+Config.instruments_extensions.append(("RaspberrySIM", RaspberrySIM))

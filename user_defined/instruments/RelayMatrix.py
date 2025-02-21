@@ -1,6 +1,7 @@
 from easy_scpi import Instrument
 from instruments import SCPI_Info, property_info
 from typing import List
+from config import Config
 
 
 class RelayMatrix(Instrument):
@@ -42,9 +43,9 @@ class RelayMatrix(Instrument):
         """
         super().__init__(
             port=scpi_info.port,
-            timeout=5000,
+            timeout=10**9,
             baud_rate=scpi_info.baud_rate,
-            handshake=False,
+            handshake=True,
             write_termination="\n",
             read_termination="\n",
         )
@@ -101,7 +102,7 @@ class RelayMatrix(Instrument):
     def get_system_log(self) -> str:
         """
         Retrieves the current system log via UART.
-        Use \| as newline character.
+        Use \\| as newline character.
         Returns
         -------
         str
@@ -126,3 +127,7 @@ class RelayMatrix(Instrument):
         Stops the system by turning off power.
         """
         self.write("sys:halt")
+
+
+# Mandatory append to register instrument class with its alias
+Config.instruments_extensions.append(("Relay Matrix", RelayMatrix))

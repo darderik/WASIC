@@ -1,5 +1,11 @@
 [
     {
+        "port": "COM9",
+        "baud_rate": 19200,
+        "idn": "KEITHLEY INSTRUMENTS INC.,MODEL 2000,1008802,A19  /A02",
+        "alias": "Model 2000"
+    },
+    {
         "port": "COM6",
         "baud_rate": 115200,
         "idn": "DIIEM,Relay Matrix,0025001C3232511635323535,V1.0",

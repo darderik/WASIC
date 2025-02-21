@@ -133,6 +133,7 @@ class Connections:
                 with Serial(port, cur_baud, timeout=instrTimeout) as curSerial:
                     curSerial.write(b"\n\n")  # Flush
                     time.sleep(instrTimeout / 2)
+                    curSerial.read(curSerial.in_waiting)
                     curSerial.write(b"*IDN?\n")  # Send identification query
                     time.sleep(instrTimeout)
                     idn_bytes = curSerial.read(curSerial.in_waiting)
@@ -169,18 +170,21 @@ class Connections:
             ]
 
             # Create a list of all comports with correct baud rates
-            all_comports: dict[str, int] = {}
+            all_comports: list[ListPortInfo] = comports()
+            port_baud_rate_dict: dict[str, int] = {}
             available_ports: List[str] = [
-                port for port in all_comports if port not in curLockedPorts
+                port.name for port in all_comports if port.name not in curLockedPorts
             ]
-            # Populate all_comports with baud rates
+            # Populate with baud rates
             for port in available_ports:
                 detected_BR: Optional[int] = detect_baud_rate(port)
                 if detected_BR is not None:
-                    all_comports[port] = detected_BR
+                    port_baud_rate_dict[port] = detected_BR
 
             for alias in curAliasesList:
-                SCPIInfo: Optional[SCPI_Info] = cls.find_instrument(alias, all_comports)
+                SCPIInfo: Optional[SCPI_Info] = cls.find_instrument(
+                    alias, port_baud_rate_dict
+                )
                 if SCPIInfo is not None:
                     from user_defined import custom_instr_handler
 

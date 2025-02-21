@@ -2,6 +2,7 @@ from easy_scpi import Instrument
 from instruments import SCPI_Info, property_info
 from typing import List
 from easy_scpi import Property as Scpi_Property
+from config import Config
 
 
 class K2000(Instrument):
@@ -202,3 +203,7 @@ class K2000(Instrument):
         else:
             self.write(f":SENS:FRES:RANG {range}")
         self.write(":CONF:FRES")
+
+
+# Mandatory append to register instrument class with its alias
+Config.instruments_extensions.append(("MODEL 2000", K2000))

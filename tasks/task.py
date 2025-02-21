@@ -1,11 +1,11 @@
 from easy_scpi import Instrument
+from config import Config
 from typing import List, Callable, Dict, Any, Optional
 from threading import Thread, Event, Lock
 from instruments import Instrument_Entry
 from .structures import ChartData
 from connections import Connections
 import json
-from config import Config
 import datetime
 
 

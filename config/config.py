@@ -20,3 +20,6 @@ class Config:
     data_charts_path: str = "data\\charts"
     # Default timeout for instrument communication
     default_timeout: float = 1
+
+    # List of instrument extensions to be loaded
+    instruments_extensions: List[tuple[str, type]] = []

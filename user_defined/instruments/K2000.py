@@ -188,15 +188,31 @@ class K2000(Instrument):
         response = self.query(":READ?")
         return float(response)
 
-    def configure_4w_resistance(self, range: float = -1) -> None:
+    def configure_4w_resistance(
+        self,
+        range: float = -1,
+        nplc: float = 1,
+        filter_ON: bool = False,
+        filter_type: str = "MOV",
+        filter_count: int = 1,
+    ) -> None:
         """
         Configures the instrument for 4-wire resistance measurement.
 
         Parameters
         ----------
-        range : float, optional
+        range : float, optional (default=-1)
             If left default, set to -1 and interpreted as auto range on.
+        nplc : float, optional (default=1)
+            Number of power line cycles.
         """
+        # Configure filter
+        if filter_ON:
+            self.write(f":SENS:FRES:FILT:TYPE {filter_type}")
+            self.write(f":SENS:FRES:FILT:COUNT {filter_count}")
+            self.write(":SENS:FRES:FILT:STAT ON")
+
+        self.write(":SENS:FRES:NPLC {}".format(nplc))  # 0.01 to 10S
         if range < 0:
             # Auto range
             self.write(":SENS:FRES:RANG:AUTO ON")

@@ -5,8 +5,6 @@ from instruments import Instrument_Entry
 from easy_scpi.scpi_instrument import SCPI_Instrument
 from instruments import SCPI_Info
 from serial import Serial
-from user_defined import RaspberrySIM
-from user_defined import init_mytask_1
 from tasks import Task, Tasks, ChartData
 from config import Config
 from user_defined import custom_instr_handler

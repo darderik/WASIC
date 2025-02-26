@@ -1,15 +1,17 @@
 import threading
+from threading import Thread
 import time
-from typing import List, Optional, Any
+import json
+from typing import List, Optional, Any, Tuple
+from dataclasses import asdict
 from serial import Serial
 from serial.tools.list_ports import comports
 from serial.tools.list_ports_common import ListPortInfo
 from instruments import Instrument_Entry, SCPI_Info
 from easy_scpi import Instrument
-from .utilities import detect_baud_rate, validate_response
+from .utilities import detect_baud_rate, validate_response, detect_baud_wrapper
 from config import Config, comm_mode
-import json
-from dataclasses import asdict
+from user_defined import custom_instr_handler
 
 
 class Connections:
@@ -112,53 +114,14 @@ class Connections:
             cls.InstrumentsList = valid_instruments  # Update the InstrumentsList
 
     @classmethod
-    def find_instrument(
-        cls, matchingName: str, com_ports: dict[str, int]
-    ) -> Optional[SCPI_Info]:
-        """
-        Finds an instrument connected to a serial port that matches the given name.
-
-        Args:
-            matchingName (str): The name to match against the instrument's identification string.
-            com_ports (dict[str, int]): Dictionary of available COM ports and their corresponding baud rates.
-
-        Returns:
-            Optional[SCPI_Info]: An SCPI_Info object containing the port, baud rate, and identification string of the matching instrument,
-                                 or None if no matching instrument is found.
-        """
-        instrTimeout: float = Config.default_timeout
-        for port in com_ports.keys():
-            cur_baud: int = com_ports[port]
-            try:
-                with Serial(port, cur_baud, timeout=instrTimeout) as curSerial:
-                    curSerial.write(b"\n\n")  # Flush
-                    time.sleep(instrTimeout / 2)
-                    curSerial.read(curSerial.in_waiting)
-                    curSerial.write(b"*IDN?\n")  # Send identification query
-                    time.sleep(instrTimeout)
-                    idn_bytes = curSerial.read(curSerial.in_waiting)
-                    idn_string = (idn_bytes.decode().split("\n"))[0].strip()
-                    # Strip special characters
-                    # idn_string = re.sub(r"[^a-zA-Z0-9,-\s]", "", idn_string)
-            except Exception as e:
-                continue  # Skip this port if any error occurs
-            if matchingName.lower() in idn_string.lower():
-                return SCPI_Info(
-                    port=port,
-                    baud_rate=cur_baud,
-                    idn=idn_string,
-                    alias=matchingName,
-                )
-        return None
-
-    @classmethod
     def fetch_all_instruments(cls, curAliasesList: List[str]) -> None:
         """
         Fetches all instruments based on the provided list of aliases.
 
-        This method iterates over the provided list of instrument aliases, finds the corresponding
-        SCPI instrument information, creates Instrument_Entry instances using custom_instr_handler,
-        and appends them to the InstrumentsList.
+        This method iterates over the provided list of instrument aliases,
+        iterates over all available ports with their baud rates, and when a
+        matching identification string is found, creates an Instrument_Entry instance
+        using custom_instr_handler and appends it to the InstrumentsList.
 
         Args:
             curAliasesList (List[str]): A list of instrument aliases to fetch.
@@ -171,29 +134,42 @@ class Connections:
 
             # Create a list of all comports with correct baud rates
             all_comports: list[ListPortInfo] = comports()
-            port_baud_rate_dict: dict[str, int] = {}
             available_ports: List[str] = [
                 port.name for port in all_comports if port.name not in curLockedPorts
             ]
-            # Populate with baud rates
+            com_idn_baud: List[Tuple[str, str, int]] = []
+
+            # Populate with baud rates and idn strings
+            threadsList: List[Thread] = []
             for port in available_ports:
-                detected_BR: Optional[int] = detect_baud_rate(port)
-                if detected_BR is not None:
-                    port_baud_rate_dict[port] = detected_BR
+                newThread: Thread = Thread(
+                    target=detect_baud_wrapper,
+                    args=(port, None, Config.default_timeout, com_idn_baud),
+                )
+                newThread.start()
+                threadsList.append(newThread)
+            for thread in threadsList:
+                thread.join()
 
             for alias in curAliasesList:
-                SCPIInfo: Optional[SCPI_Info] = cls.find_instrument(
-                    alias, port_baud_rate_dict
-                )
-                if SCPIInfo is not None:
-                    from user_defined import custom_instr_handler
-
+                scpi_info: Optional[SCPI_Info] = None
+                # Search for a matching port/IDN from the tuple list
+                for port, idn_string, baud in com_idn_baud:
+                    if alias.lower() in idn_string.lower():
+                        scpi_info = SCPI_Info(
+                            port=port,
+                            baud_rate=baud,
+                            idn=idn_string,
+                            alias=alias,
+                        )
+                        break
+                if scpi_info is not None:
                     instrument_entry: Optional[Instrument_Entry] = custom_instr_handler(
-                        SCPIInfo
+                        scpi_info
                     )
                     if instrument_entry is not None:
                         cls.InstrumentsList.append(instrument_entry)
-                        curLockedPorts.append(SCPIInfo.port)  # Update locked ports
+                        curLockedPorts.append(scpi_info.port)  # Update locked ports
                     else:
                         raise RuntimeError(
                             f"Failed to create Instrument_Entry for instrument: {alias}"
@@ -233,8 +209,6 @@ class Connections:
                     ]
                 for instr_info in instr_info_list:
                     if not cls.is_scpi_info_busy(instr_info):
-                        from user_defined import custom_instr_handler
-
                         instrument_entry: Optional[Instrument_Entry] = (
                             custom_instr_handler(instr_info)
                         )

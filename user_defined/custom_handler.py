@@ -1,5 +1,5 @@
-from easy_scpi.scpi_instrument import SCPI_Instrument
 from typing import Optional, List
+from easy_scpi.scpi_instrument import SCPI_Instrument
 from instruments import Instrument_Entry, SCPI_Info
 from serial import Serial
 from config import Config, comm_mode  # Add this line to import Config and comm_mode

@@ -1,16 +1,15 @@
-import streamlit as st
-from typing import List, Optional
 import time
-from streamlit.delta_generator import DeltaGenerator
-from dataclasses import dataclass
-from connections import Connections
-from instruments.properties import property_info
-from easy_scpi import Instrument
-from user_defined import RaspberrySIM
-from tasks import Task, Tasks
-from tasks import ChartData
+from typing import List, Optional
+
 import pandas as pd
-from webapp import plot_chart
+import streamlit as st
+from dataclasses import dataclass
+from streamlit.delta_generator import DeltaGenerator
+from connections import Connections
+from easy_scpi import Instrument
+from instruments.properties import property_info
+from tasks import ChartData, Task, Tasks
+from webapp import plot_chart_native, plot_chart_plotly
 
 
 def set_custom_alias() -> None:
@@ -78,7 +77,8 @@ with st.container():
             with st.expander("🔌 Instruments", expanded=True):
                 if cur_task.instruments != []:
                     for instr in cur_task.instruments:
-                        st.write(f"- **ID:** {instr.data.idn}")
+                        if instr is not None:
+                            st.write(f"- **ID:** {instr.data.idn}")
                 else:
                     st.write("No instruments associated with this task.")
 
@@ -101,8 +101,8 @@ with st.container():
                     help="Stop the currently running task.",
                     disabled=custom_alias == "",
                 )
-
-        plots_list: List[DeltaGenerator] = []
+        paused = st.checkbox("Pause Data", False)
+        plots_pholder_list: List[DeltaGenerator] = []
 
         # Display Data Visualization
         with st.container():
@@ -111,18 +111,17 @@ with st.container():
                 st.subheader(f"📈 {cur_chart.name}")
                 # Placeholder for the scatter chart
                 scatter_placeholder = st.empty()
-                plots_list.append(scatter_placeholder)
+                plots_pholder_list.append(scatter_placeholder)
             # TODO Shall allow to have multiple scatter. Dynamic array with the same amount of charts as the elements of the curdatalist list
             # Placeholder for the scatter chart
-            paused = st.checkbox("Pause Data", False)
             curDataList: List[ChartData] = Tasks._is_running.data
             # Continuously update the chart
             if not paused:
                 while Tasks._is_running is not None:
                     for idx, curChartData in enumerate(curDataList):
-                        plot_chart(curChartData, plots_list[idx])
+                        plot_chart_plotly(curChartData, plots_pholder_list[idx])
                     # Pause loop button
                     time.sleep(2)
             else:
                 for idx, curChartData in enumerate(curDataList):
-                    plot_chart(curChartData, plots_list[idx])
+                    plot_chart_native(curChartData, plots_pholder_list[idx])

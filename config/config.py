@@ -10,7 +10,7 @@ class comm_mode(Enum):
 class Config:
     # Aliases to look for while searching for instruments
     instrAliasesList: List[str] = [
-        # "Raspberry",
+        "Raspberry",
         "Model 2000",
         "Relay Matrix",
     ]  # To add serial numbers instead of aliases
@@ -19,7 +19,7 @@ class Config:
     instrument_config_datapath: str = "data\\instr\\instruments.json"
     data_charts_path: str = "data\\charts"
     # Default timeout for instrument communication
-    default_timeout: float = 1
+    default_timeout: float = 0.1
 
     # List of instrument extensions to be loaded
     instruments_extensions: List[tuple[str, type]] = []

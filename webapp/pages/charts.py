@@ -1,12 +1,11 @@
-import streamlit as st
-from typing import List
-from pathlib import Path
 import json
-from tasks import ChartData
-from streamlit.delta_generator import DeltaGenerator
+from pathlib import Path
+from typing import List
 import pandas as pd
-from webapp import plot_chart
-from pandas.core.frame import DataFrame
+import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
+from tasks import ChartData
+from webapp import plot_chart_native, plot_chart_plotly
 
 st.title("📊 Charts Selector")
 
@@ -58,6 +57,6 @@ with st.container():
             chart_data: ChartData = ChartData(**chart_data_dict)
 
         st.markdown(f"**Chart Title:** {chart_data.name}")
-        scatter = st.empty()
-        plot_chart(chart_data, scatter)
+        placeholder = st.empty()
+        plot_chart_native(chart_data, placeholder)
         st.divider()

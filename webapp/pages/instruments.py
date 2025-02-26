@@ -36,7 +36,10 @@ def instruments_page(alias: str) -> None:
         st.subheader(f"🔌 {instr_name}")
 
         # Display Properties if available
-        if len(cur_scpi_instrument.properties_list) > 0:
+        if (
+            type(cur_scpi_instrument.properties_list) != Scpi_Property
+            and len(cur_scpi_instrument.properties_list) > 0
+        ):
             instr_properties: List[property_info] = cur_scpi_instrument.properties_list
 
             # Table Headers

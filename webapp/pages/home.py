@@ -5,7 +5,6 @@ from config import Config
 from easy_scpi import Instrument
 from typing import List
 from instruments import Instrument_Entry
-from user_defined import RaspberrySIM
 
 
 def verify_instruments(mode: int = 0):
@@ -41,7 +40,7 @@ def send_command(instr_selected: Instrument_Entry, command: str, uid: str) -> No
     try:
         if "?" in command:  # This is a query, expect a response
             result: str = instr_selected.query_wrapper(command)
-            st.session_state[   
+            st.session_state[
                 f"{uid}_buffer_output"
             ] += f"{instr_selected.data.alias}: {command} --> {result}\n"
             st.success("Command executed successfully!")

@@ -20,9 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import time
 import string
 import serial
+from typing import Tuple, List, Optional, Any
+from config import Config
 
 DEFAULT_TIMEOUT = 3  # seconds
 BAUDRATES = (
@@ -50,33 +51,29 @@ def detect_baud_rate(
     data=None,
     timeout: float = DEFAULT_TIMEOUT,
     scan_all=False,
-    print_response=False,
     print_all=False,
-):
+) -> Tuple[int, str] | None:
     baudrates = BAUDRATES if scan_all else (9600, 19200, 38400, 57600, 115200, 14400)
     data = (
         data
         if isinstance(data, bytes)
         else data.encode() if data is not None else b"*IDN?\n"
     )
-    detected_baud_rate = None
+
+    detected_baud_rate: int = 0
     for baudrate in baudrates:
-        with serial.Serial(port, timeout=timeout) as ser:
+        with serial.Serial(port) as ser:
             ser.baudrate = baudrate
+            ser.timeout = timeout
             ser.write(b"\n\n")  # Flush
             ser.read(ser.in_waiting)
-            if data is not None:
-                ser.write(data)
-                time.sleep(timeout)
-            response = ser.read(ser.in_waiting)
+            ser.write(data)
+            response = ser.read_until(expected=b"\n")
+            _ = ser.read(ser.in_waiting)  # Flush
             if validate_response(response):
-                if print_response or print_all:
-                    print(f"Response at {baudrate} baud rate: {response}")
                 detected_baud_rate = baudrate
-                if not print_all:
-                    break
-            ser.close()
-    return detected_baud_rate
+                current_idn = response.decode().strip()
+    return (detected_baud_rate, current_idn) if detected_baud_rate != 0 else None
 
 
 def validate_response(response: bytes) -> bool:
@@ -85,3 +82,14 @@ def validate_response(response: bytes) -> bool:
         return any(c in string.printable for c in response_str)
     except UnicodeDecodeError:
         return False
+
+
+def detect_baud_wrapper(
+    port, data, timeout: float, target_list: List[Tuple[str, str, int]]
+) -> None:
+    BR_IDN: Optional[Tuple[int, str]] = detect_baud_rate(
+        port=port, timeout=Config.default_timeout
+    )
+    # PORT, IDN, BAUD
+    if BR_IDN is not None:
+        target_list.append((port, BR_IDN[1], BR_IDN[0]))

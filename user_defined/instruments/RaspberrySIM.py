@@ -85,4 +85,4 @@ class RaspberrySIM(Instrument):
 
 
 # Mandatory append to register instrument class with its alias
-Config.instruments_extensions.append(("RaspberrySIM", RaspberrySIM))
+Config.instruments_extensions.append(("Raspberry", RaspberrySIM))

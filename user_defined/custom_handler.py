@@ -15,6 +15,9 @@ def check_init_properties(scpi_obj: SCPI_Instrument) -> bool:
 def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
     newSCPI: SCPI_Instrument = None
     curInstrumentWrapper: Optional[Instrument_Entry] = None
+    # Serial auxiliar object
+    newComObj: Serial = Serial(scpi_info.port, scpi_info.baud_rate)  # TODO timeout?
+    newComObj.close()
 
     # Fetch from Config.instrumentsExtensions
     for instr_ext in Config.instruments_extensions:
@@ -28,12 +31,9 @@ def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
             baud_rate=scpi_info.baud_rate,
         )
 
-    newComObj: Serial = Serial(scpi_info.port, scpi_info.baud_rate)  # TODO timeout?
-    newComObj.close()
     if newSCPI is not None and newComObj is not None:
         if Config.communication_mode == comm_mode.pyVisa:
             # Lock the instrument resource
-            newSCPI.connect()
             if check_init_properties(newSCPI):
                 newSCPI.init_properties()
             curInstrumentWrapper = Instrument_Entry(

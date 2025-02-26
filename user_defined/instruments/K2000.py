@@ -42,7 +42,13 @@ class K2000(Instrument):
         """
         curPort: str = scpi_info.port
         curBaudRate: int = scpi_info.baud_rate
-        super().__init__(port=curPort, timeout=5000, baud_rate=curBaudRate)
+        super().__init__(
+            port=curPort,
+            baud_rate=curBaudRate,
+            read_termination="\n",
+            write_termination="\n",
+        )
+        self.connect()
 
     def disable_beep(self) -> None:
         """

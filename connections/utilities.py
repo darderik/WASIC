@@ -61,18 +61,25 @@ def detect_baud_rate(
     )
 
     detected_baud_rate: int = 0
-    for baudrate in baudrates:
-        with serial.Serial(port) as ser:
+    with serial.Serial(port) as ser:
+        for baudrate in baudrates:
             ser.baudrate = baudrate
             ser.timeout = timeout
             ser.write(b"\n\n")  # Flush
             ser.read(ser.in_waiting)
             ser.write(data)
             response = ser.read_until(expected=b"\n")
-            _ = ser.read(ser.in_waiting)  # Flush
+
+            # FLush statements
+            ser.read(ser.in_waiting)
+            ser.write(b"\n")
+            ser.read(ser.in_waiting)
+
             if validate_response(response):
                 detected_baud_rate = baudrate
                 current_idn = response.decode().strip()
+                break
+    ser.close()
     return (detected_baud_rate, current_idn) if detected_baud_rate != 0 else None
 
 

@@ -19,7 +19,7 @@ class Config:
     instrument_config_datapath: str = "data\\instr\\instruments.json"
     data_charts_path: str = "data\\charts"
     # Default timeout for instrument communication
-    default_timeout: float = 0.1
+    default_timeout: float = 0.5
 
     # List of instrument extensions to be loaded
     instruments_extensions: List[tuple[str, type]] = []

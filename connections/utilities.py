@@ -25,7 +25,7 @@ import serial
 from typing import Tuple, List, Optional, Any
 from config import Config
 
-DEFAULT_TIMEOUT = 3  # seconds
+DEFAULT_TIMEOUT = 1  # seconds
 BAUDRATES = (
     110,
     300,
@@ -65,15 +65,12 @@ def detect_baud_rate(
         for baudrate in baudrates:
             ser.baudrate = baudrate
             ser.timeout = timeout
-            ser.write(b"\n\n")  # Flush
+            ser.write(b"\n\n\n\n")  # Flush
             ser.read(ser.in_waiting)
             ser.write(data)
             response = ser.read_until(expected=b"\n")
-
-            # FLush statements
-            ser.read(ser.in_waiting)
-            ser.write(b"\n")
-            ser.read(ser.in_waiting)
+            while ser.in_waiting != 0:
+                _ = ser.read(ser.in_waiting)
 
             if validate_response(response):
                 detected_baud_rate = baudrate

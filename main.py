@@ -8,6 +8,7 @@ from serial import Serial
 from tasks import Task, Tasks, ChartData
 from config import Config
 from user_defined import custom_instr_handler
+from user_defined.tasks import *
 
 # Global variables
 #        # Craft SCPI Info

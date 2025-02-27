@@ -12,9 +12,6 @@ from user_defined.tasks.utilities import spawn_data_processor, generic_processor
 from connections import Connections
 
 
-conf_sample_thickness: float = 1e-6  # Sample thickness in meters
-
-
 def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
     """
     Performs a Van der Pauw measurement task, measuring horizontal and vertical resistances
@@ -51,7 +48,7 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
         y_label="Resistance (Ohm)",
     )
     vdp_sheet_resistance_chart: ChartData = ChartData(
-        name="Van der Pauw Resistivity",
+        name="Van der Pauw Sheet Resistance",
         info="Sheet resistance calculated using the Van der Pauw method. each raw_y element contains [R_h,R_v].",
         math_formula_y=lambda h_v_res: van_der_pauw_calculation(h_v_res),
         x_label="Samples",
@@ -89,13 +86,11 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
         # Measure horizontal resistance
         relay_matrix.switch_commute_exclusive("a1", "b2", "c3", "d4")
         relay_matrix.opc()
-        time.sleep(0.5)
         horizontal_resistance: float = k2000.read_measurement()
 
         # Measure vertical resistance
-        relay_matrix.switch_commute_exclusive("a2", "b3", "c4", "d1")
+        relay_matrix.switch_commute_exclusive("a3", "b4", "c1", "d2")
         relay_matrix.opc()
-        time.sleep(0.5)
         vertical_resistance: float = k2000.read_measurement()
 
         # Update the charts
@@ -110,12 +105,10 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
             newThreadProcessor.join()
             break  # Exit the loop if the exit flag is set
 
-        time.sleep(2)
+        time.sleep(0.1)
 
 
-def van_der_pauw_calculation(
-    hor_ver_resistance: List[float], sample_thickness: float = conf_sample_thickness
-) -> float:
+def van_der_pauw_calculation(hor_ver_resistance: List[float]) -> float:
     """Calculate the sheet resistance of a sample using the Van der Pauw method."""
     horizontal_resistance, vertical_resistance = hor_ver_resistance
     R_s = sp.Symbol("R_s")  # Sheet resistance
@@ -141,4 +134,4 @@ def init_4w_vdp() -> None:
 
 
 # Add the task initialization function to the list of task initialization functions
-Tasks.tasks_init_list.append(init_4w_vdp)
+# Tasks.tasks_init_list.append(init_4w_vdp)

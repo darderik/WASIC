@@ -47,8 +47,10 @@ class K2000(Instrument):
             baud_rate=curBaudRate,
             read_termination="\n",
             write_termination="\n",
+            timeout=5000,
         )
         self.connect()
+        self.disable_beep()
 
     def disable_beep(self) -> None:
         """
@@ -165,7 +167,8 @@ class K2000(Instrument):
         """
         Reads a measurement value.
         """
-        return float(self.query(":READ?"))
+        curRead: str = self.query(":READ?")
+        return float(curRead)
 
     def measure_voltage_dc(self) -> float:
         """

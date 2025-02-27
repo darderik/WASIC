@@ -119,7 +119,7 @@ with st.container():
             if not paused:
                 while Tasks._is_running is not None:
                     for idx, curChartData in enumerate(curDataList):
-                        plot_chart_plotly(curChartData, plots_pholder_list[idx])
+                        plot_chart_native(curChartData, plots_pholder_list[idx])
                     # Pause loop button
                     time.sleep(2)
             else:

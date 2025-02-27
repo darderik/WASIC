@@ -43,7 +43,7 @@ class RelayMatrix(Instrument):
         """
         super().__init__(
             port=scpi_info.port,
-            timeout=10**9,
+            timeout=5000,
             baud_rate=scpi_info.baud_rate,
             handshake=True,
             write_termination="\n",

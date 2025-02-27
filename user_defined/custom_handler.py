@@ -33,6 +33,8 @@ def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
 
     if newSCPI is not None and newComObj is not None:
         if Config.communication_mode == comm_mode.pyVisa:
+            if not newSCPI.connected:
+                newSCPI.connect()
             # Lock the instrument resource
             if check_init_properties(newSCPI):
                 newSCPI.init_properties()

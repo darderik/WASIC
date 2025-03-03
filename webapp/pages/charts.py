@@ -34,6 +34,7 @@ with st.container():
             "➕ Add Chart",
             on_click=lambda: charts_to_plot.append(chart_filename),
             key="add_chart_btn",
+            disabled=len(jsons_list) == 0,
         )
 
     with col2:

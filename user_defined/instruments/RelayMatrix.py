@@ -68,6 +68,7 @@ class RelayMatrix(Instrument):
         """
         command = f"switch:commute {' '.join(relays)}"
         self.write(command)
+        self.opc()
 
     def switch_commute_reset(self, *relays: str) -> None:
         """
@@ -80,6 +81,7 @@ class RelayMatrix(Instrument):
         """
         command = f"switch:commute:reset {' '.join(relays)}"
         self.write(command)
+        self.opc()
 
     def switch_commute_reset_all(self) -> None:
         """

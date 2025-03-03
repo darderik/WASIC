@@ -36,8 +36,6 @@ def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
             if not newSCPI.connected:
                 newSCPI.connect()
             # Lock the instrument resource
-            if check_init_properties(newSCPI):
-                newSCPI.init_properties()
             curInstrumentWrapper = Instrument_Entry(
                 data=scpi_info,
                 scpi_instrument=newSCPI,

@@ -51,6 +51,7 @@ class K2000(Instrument):
         )
         self.connect()
         self.disable_beep()
+        self.init_properties()
 
     def disable_beep(self) -> None:
         """
@@ -196,6 +197,48 @@ class K2000(Instrument):
         self.write(":CONF:VOLT:AC")
         response = self.query(":READ?")
         return float(response)
+
+    def configure_2w_resistance(
+        self,
+        range: float = -1,
+        nplc: float = 1,
+        filter_ON: bool = False,
+        filter_type: str = "MOV",
+        filter_count: int = 1,
+    ) -> None:
+        """
+        Configures the instrument for 2-wire resistance measurement.
+
+        Parameters
+        ----------
+        range : float, optional (default=-1)
+            If left default, set to -1 and interpreted as auto range on.
+        nplc : float, optional (default=1)
+            Number of power line cycles.
+        filter_ON : bool, optional (default=False)
+            Enable filtering if True.
+        filter_type : str, optional (default="MOV")
+            Type of filter to use.
+        filter_count : int, optional (default=1)
+            Number of samples for the filter.
+        """
+        # Configure filter if enabled
+        if filter_ON:
+            self.write(f":SENS:RES:FILT:TYPE {filter_type}")
+            self.write(f":SENS:RES:FILT:COUNT {filter_count}")
+            self.write(":SENS:RES:FILT:STAT ON")
+
+        # Set integration time
+        self.write(f":SENS:RES:NPLC {nplc}")
+
+        # Set range: auto range if value < 0, manual otherwise
+        if range < 0:
+            self.write(":SENS:RES:RANG:AUTO ON")
+        else:
+            self.write(f":SENS:RES:RANG {range}")
+
+        # Configure measurement mode for 2-wire resistance
+        self.write(":CONF:RES")
 
     def configure_4w_resistance(
         self,

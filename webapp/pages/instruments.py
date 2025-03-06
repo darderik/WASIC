@@ -6,6 +6,8 @@ from instruments.properties import property_info
 from easy_scpi import Instrument  # Adjust the import path as necessary
 from easy_scpi import Property as Scpi_Property
 
+connections_obj = Connections()
+
 
 def send_parameters(instr_properties: List[property_info]) -> None:
     for prop in instr_properties:
@@ -28,7 +30,7 @@ def send_parameters(instr_properties: List[property_info]) -> None:
 
 def instruments_page(alias: str) -> None:
     # Retrieve the instrument based on the alias
-    instr = Connections.get_instrument(alias)
+    instr = connections_obj.get_instrument(alias)
     if instr is not None:
         cur_scpi_instrument: Instrument = instr.scpi_instrument
         instr_name: str = instr.data.idn  # IDN or ALIAS?
@@ -96,7 +98,7 @@ with st.container():
     # Instrument Selection Dropdown
     instr_selectbox: str = st.selectbox(
         "🔍 Select Instrument",
-        Connections.get_instruments_aliases(idn=True),
+        connections_obj.get_instruments_aliases(idn=True),
         help="Choose an instrument to configure.",
         key="instr_selectbox",
     )

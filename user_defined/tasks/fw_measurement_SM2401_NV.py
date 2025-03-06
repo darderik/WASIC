@@ -64,12 +64,20 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
             temperature_chart,
         ]
     )
+    # Connections singleton
+    connection_obj: Connections = Connections()
 
     # Retrieve instruments
-    relay_entry: Optional[Instrument_Entry] = Connections.get_instrument("relay matrix")
-    k2000_entry: Optional[Instrument_Entry] = Connections.get_instrument("model 2000")
-    sm2401_entry: Optional[Instrument_Entry] = Connections.get_instrument("model 2401")
-    nv34420_entry: Optional[Instrument_Entry] = Connections.get_instrument("34420")
+    relay_entry: Optional[Instrument_Entry] = connection_obj.get_instrument(
+        "relay matrix"
+    )
+    k2000_entry: Optional[Instrument_Entry] = connection_obj.get_instrument(
+        "model 2000"
+    )
+    sm2401_entry: Optional[Instrument_Entry] = connection_obj.get_instrument(
+        "model 2401"
+    )
+    nv34420_entry: Optional[Instrument_Entry] = connection_obj.get_instrument("34420")
 
     if (
         relay_entry is None
@@ -202,4 +210,5 @@ def init_4w_vdp() -> None:
         instrs_aliases=["model 2000", "relay matrix", "model 2401", "34420"],
         function=meas_4w_vdp,
     )
-    Tasks.tasks_list.append(new_task)
+    tasks_obj = Tasks()
+    tasks_obj.add_task(new_task)

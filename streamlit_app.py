@@ -13,5 +13,3 @@ page_array = [
 st.set_page_config(page_title="WASIC", page_icon="🔌", layout="wide")
 pg = st.navigation(page_array)
 pg.run()
-
-# streamlit.Page("./webapp/pages/instr_1.py")

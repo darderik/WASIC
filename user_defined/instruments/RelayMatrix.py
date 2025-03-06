@@ -132,4 +132,4 @@ class RelayMatrix(Instrument):
 
 
 # Mandatory append to register instrument class with its alias
-Config.instruments_extensions.append(("Relay Matrix", RelayMatrix))
+Config().add_instrument_extension(("Relay Matrix", RelayMatrix))

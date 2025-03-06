@@ -53,6 +53,7 @@ class Task:
         self.instruments: List[Optional[Instrument_Entry]] = instruments
         self.function: Callable[[List[ChartData], Event], None] = function
         self.custom_alias: str = custom_alias
+        self._config: Config = Config()
 
     def _spawn(self) -> None:
         """
@@ -92,7 +93,7 @@ class Task:
                     "custom_name": chart.custom_name,
                 },
                 open(
-                    file=f"{Config.data_charts_path}\\{chart.name}_{additional_file_name}.json",
+                    file=f"{self._config.get("data_charts_path")}\\{chart.name}_{additional_file_name}.json",
                     mode="w",
                 ),
                 skipkeys=True,
@@ -104,7 +105,8 @@ class Task:
     def has_instruments(self) -> bool:
         aliases: List[str] = self.instr_aliases
         for alias in aliases:
-            instr = Connections.get_instrument(alias)
+            conn_obj: Connections = Connections()
+            instr = conn_obj.get_instrument(alias)
             if instr is None:
                 return False
         return True
@@ -119,80 +121,90 @@ class Tasks:
         _is_running (Optional[Task]): The currently running task, if any.
     """
 
-    tasks_list: List[Task] = []
-    _is_running: Optional[Task] = None
-    tasks_init_list: List[Callable] = []
+    _instance = None
 
-    @classmethod
-    def init_tasks(cls) -> None:
-        for init_task in cls.tasks_init_list:
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._tasks_list: List[Task] = []
+            cls._is_running: Optional[Task] = None
+            cls.tasks_init_list: List[Callable[[], None]] = []
+        return cls._instance
+
+    def add_init_task(self, task: Callable[[], None]) -> None:
+        """
+        Adds a task initialization function to the tasks init list.
+
+        Args:
+            task (Callable[[], None]): The task initialization function to add.
+        """
+        self.tasks_init_list.append(task)
+        # Execute the task initialization function
+        task()
+
+    def init_tasks(self) -> None:
+        for init_task in self.tasks_init_list:
             init_task()
 
-    @classmethod
-    def is_running_get(cls) -> Optional[Task]:
+    def is_running_get(self) -> Optional[Task]:
         """
         Retrieves the currently running task.
 
         Returns:
             Optional[Task]: The currently running task, or None if no task is running.
         """
-        return cls._is_running
+        return self._is_running
 
-    @classmethod
-    def is_running_set(cls, task: Optional[Task]) -> None:
+    def is_running_set(self, task: Optional[Task]) -> None:
         """
         Sets the currently running task.
 
         Args:
             task (Optional[Task]): The task to set as running, or None to indicate no task is running.
         """
-        cls._is_running = task
+        self._is_running = task
 
-    @classmethod
-    def update_instruments(cls) -> None:
-        for tsk in cls.tasks_list:
+    def update_instruments(self) -> None:
+        for tsk in self._tasks_list:
             tsk.instruments = []
             for instr_alias in tsk.instr_aliases:
-                instr = Connections.get_instrument(instr_alias)
+                conn_obj: Connections = Connections()
+                instr = conn_obj.get_instrument(instr_alias)
                 if instr is not None:
                     tsk.instruments.append(instr)
 
-    @classmethod
-    def run_task(cls, name: str) -> None:
+    def run_task(self, name: str) -> None:
         """
         Runs a task by its name if no other task is currently running.
 
         Args:
             name (str): The name of the task to run.
         """
-        if cls._is_running is None:
-            for task in cls.tasks_list:
+        if self._is_running is None:
+            for task in self._tasks_list:
                 if task.name == name:
                     task._spawn()
-                    cls._is_running = task
+                    self._is_running = task
                     break
 
-    @classmethod
-    def kill_task(cls) -> None:
+    def kill_task(self) -> None:
         """
         Stops the currently running task, if any.
         """
-        if cls._is_running is not None:
-            cls._is_running._stop()
-            cls._is_running = None
+        if self._is_running is not None:
+            self._is_running._stop()
+            self._is_running = None
 
-    @classmethod
-    def add_task(cls, task: Task) -> None:
+    def add_task(self, task: Task) -> None:
         """
         Adds a new task to the tasks list.
 
         Args:
             task (Task): The task to add.
         """
-        cls.tasks_list.append(task)
+        self._tasks_list.append(task)
 
-    @classmethod
-    def get_task(cls, name: str) -> Optional[Task]:
+    def get_task(self, name: str) -> Optional[Task]:
         """
         Retrieves a task by its name.
 
@@ -202,7 +214,7 @@ class Tasks:
         Returns:
             Optional[Task]: The task with the given name, or None if not found.
         """
-        for task in cls.tasks_list:
+        for task in self._tasks_list:
             if task.name == name:
                 return task
         return None

@@ -91,8 +91,9 @@ def validate_response(response: bytes) -> bool:
 def detect_baud_wrapper(
     port, data, timeout: float, target_list: List[Tuple[str, str, int]]
 ) -> None:
+    config = Config()
     BR_IDN: Optional[Tuple[int, str]] = detect_baud_rate(
-        port=port, timeout=Config.default_timeout
+        port=port, timeout=config.get("default_timeout", 0.5), data=data
     )
     # PORT, IDN, BAUD
     if BR_IDN is not None:

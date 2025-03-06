@@ -35,9 +35,11 @@ def mytask_k2000(data: List[ChartData], exit_flag: Event) -> None:
     newThreadProcessor: Thread = spawn_data_processor(
         data, exit_flag, generic_processor
     )
-
+    newThreadProcessor.start()
+    # Connections singleton
+    connections_obj: Connections = Connections()
     # Get the instrument entry for "raspberry" from Connections
-    curK2000_entry: Optional[Instrument_Entry] = Connections.get_instrument(
+    curK2000_entry: Optional[Instrument_Entry] = connections_obj.get_instrument(
         "Model 2000"
     )
 
@@ -91,8 +93,5 @@ def init_mytask_k2000() -> None:
         instrs_aliases=["Model 2000"],
         function=mytask_k2000,
     )
-    Tasks.add_task(newTask)  # Add the new task to the tasks list
-
-
-# Add the task initialization function to the list of task initialization functions
-Tasks.tasks_init_list.append(init_mytask_k2000)
+    tasks_obj: Tasks = Tasks()
+    tasks_obj.add_task(newTask)  # Add the new task to the tasks list

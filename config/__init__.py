@@ -1,1 +1,1 @@
-from .config import Config, comm_mode
+from .config import Config

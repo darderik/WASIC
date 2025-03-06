@@ -61,11 +61,15 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
             vdp_sheet_resistance_chart,
         ]
     )
+    # Connection obj
+    connection_obj: Connections = Connections()
     # Fetch relay matrix and k2000 maybe with SN
-    relay_matrix_entry: Optional[Instrument_Entry] = Connections.get_instrument(
+    relay_matrix_entry: Optional[Instrument_Entry] = connection_obj.get_instrument(
         "relay matrix"
     )
-    k2000_entry: Optional[Instrument_Entry] = Connections.get_instrument("model 2000")
+    k2000_entry: Optional[Instrument_Entry] = connection_obj.get_instrument(
+        "model 2000"
+    )
 
     if relay_matrix_entry is None or k2000_entry is None:
         return
@@ -130,7 +134,8 @@ def init_4w_vdp() -> None:
         instrs_aliases=["model 2000", "relay matrix"],
         function=meas_4w_vdp,
     )
-    Tasks.tasks_list.append(newTask)  # Add the new task to the tasks list
+    tasks_obj = Tasks()
+    tasks_obj._tasks_list.append(newTask)  # Add the new task to the tasks list
 
 
 # Add the task initialization function to the list of task initialization functions

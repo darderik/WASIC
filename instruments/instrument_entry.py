@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from easy_scpi.scpi_instrument import SCPI_Instrument
 from serial import Serial
-from config import Config, comm_mode
+from config import Config
 import time
 from typing import Optional
 
@@ -34,9 +34,10 @@ class Instrument_Entry:
     data: SCPI_Info
     com_obj: Serial = None
     scpi_instrument: SCPI_Instrument = None
+    _config: Config = Config()
 
     def write_wrapper(self, command: str) -> None:
-        if Config.communication_mode == comm_mode.pyVisa:
+        if self._config.get("comm_mode", "pyvisa") == "pyvisa":
             self.scpi_instrument.write(command)
         else:
             if not self.com_obj.is_open:
@@ -49,12 +50,12 @@ class Instrument_Entry:
         # The CLS handling should be implemented in the children classes
         # Refer to test_instrument example
         toReturn: str = ""
-        if Config.communication_mode == comm_mode.pyVisa:
+        if self._config.get("comm_mode", "pyvisa") == "pyvisa":
             toReturn = self.scpi_instrument.read()
         else:
             if not self.com_obj.is_open:
                 self.com_obj.open()
-                time.sleep(Config.default_timeout)
+                time.sleep(self._config.get("default_timeout"))
                 toReturn = self.com_obj.read_all().decode()
             else:
                 raise Exception(RuntimeError("Serial port is already open."))
@@ -64,12 +65,12 @@ class Instrument_Entry:
         # The CLS handling should be implemented in the children classes
         # Refer to test_instrument example
         toReturn: str = ""
-        if Config.communication_mode == comm_mode.pyVisa:
+        if self._config.get("comm_mode", "pyvisa") == "pyvisa":
             toReturn = self.scpi_instrument.query(command)
         else:
             if not self.com_obj.is_open:
                 self.com_obj.open()
-                time.sleep(Config.default_timeout)
+                time.sleep(self._config.get("default_timeout", 0.5))
                 self.com_obj.write(command.encode())
                 toReturn = self.com_obj.read_all().decode()
             else:

@@ -51,12 +51,13 @@ class RaspberrySIM(Instrument):
             timeout=5000,
             baud_rate=curBaudRate,
         )
+        self.init_properties()
 
         # other initialization code...
 
     # Begin custom code, specific to instrument
     # Include this even if no init_properties() method is defined
-    properties_list: List[property_info] = []
+    # properties_list: List[property_info] = []
 
     def init_properties(self) -> None:
         self.properties_list: List[property_info] = [
@@ -68,7 +69,7 @@ class RaspberrySIM(Instrument):
             ),
         ]
 
-    ## End custom code, specific to instrument
+    # End custom code, specific to instrument
     @property
     def voltp(self):
         """
@@ -85,4 +86,4 @@ class RaspberrySIM(Instrument):
 
 
 # Mandatory append to register instrument class with its alias
-Config.instruments_extensions.append(("Raspberry", RaspberrySIM))
+Config().add_instrument_extension(("Raspberry", RaspberrySIM))

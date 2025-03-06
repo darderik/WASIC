@@ -33,9 +33,13 @@ def mytask_1(data: List[ChartData], exit_flag: Event) -> None:
     newThreadProcessor: Thread = spawn_data_processor(
         data, exit_flag, generic_processor
     )
+    # Connections singleton
+    connections_obj: Connections = Connections()
 
     # Get the instrument entry for "raspberry" from Connections
-    curRPI_Entry: Optional[Instrument_Entry] = Connections.get_instrument("raspberry")
+    curRPI_Entry: Optional[Instrument_Entry] = connections_obj.get_instrument(
+        "raspberry"
+    )
 
     # Get the SCPI instrument from the entry if it exists, otherwise set to None
     curRPI: Optional[Instrument] = (
@@ -81,8 +85,5 @@ def init_mytask_1() -> None:
         instrs_aliases=["raspberry"],
         function=mytask_1,
     )
-    Tasks.tasks_list.append(newTask)  # Add the new task to the tasks list
-
-
-# Add the task initialization function to the list of task initialization functions
-Tasks.tasks_init_list.append(init_mytask_1)
+    tasks_obj: Tasks = Tasks()
+    tasks_obj.add_task(newTask)  # Add the new task to the tasks list

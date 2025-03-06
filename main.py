@@ -10,33 +10,9 @@ from config import Config
 from user_defined import custom_instr_handler
 from user_defined.tasks import *
 
-# Global variables
-#        # Craft SCPI Info
-#        scpi_info: SCPI_Info = SCPI_Info(
-#            port="COM5", baud_rate=115200, idn="Raspberry Pi SPI 1.0", alias="Raspberry"
-#        )
-#        curInWrapper: Instrument_Entry = Instrument_Entry(
-#            scpi_info,
-#            Serial(scpi_info.port, scpi_info.baud_rate),
-#            scpi_instrument=RaspberrySIM(scpi_info),
-#        )
-#        curInWrapper.com_obj.close()
-#        curInWrapper.scpi_instrument.connect()
-#        curInWrapper.scpi_instrument.init_properties()
-#
-#        Connections.InstrumentsList.append(curInWrapper)
-
 
 def main():
-    # Init instruments
-    # Connections.load_config()
-    # Manual instruments
-
     # Init tasks
-    Tasks.init_tasks()
-    # Connections.fetch_all_instruments(Config.instrAliasesList)
-    # Connections.fetch_all_instruments(Config.instrAliasesList)
-    # Path del file Streamlit
     script_path = os.path.abspath("streamlit_app.py")
 
     # Avvio di Streamlit

@@ -6,31 +6,30 @@ from easy_scpi import Instrument
 from typing import List
 from instruments import Instrument_Entry
 
+conn_obj = Connections()
+conf_obj = Config()
+
 
 def verify_instruments(mode: int = 0):
     """Verify or fetch all instruments based on the mode."""
     if mode == 0:
-        Connections.verify_instruments()
+        conn_obj.verify_instruments()
     else:
-        for instr in Connections.InstrumentsList:
+        for instr in conn_obj.instruments_list:
             instr.scpi_instrument.disconnect()
-            Connections.InstrumentsList.remove(instr)
-
-        Connections.fetch_all_instruments(Config.instrAliasesList)
+            conn_obj.instruments_list.remove(instr)
+        conn_obj.fetch_all_instruments(conf_obj.get("instr_aliases"))
     # Update session state with the instruments data
+    instr_list: List[Instrument_Entry] = conn_obj.instruments_list
     st.session_state["instr_table"] = pd.DataFrame(
         {
-            "Instrument Name": [
-                instr.data.idn for instr in Connections.InstrumentsList
-            ],
-            "COM PORT": [
-                instr.scpi_instrument.port for instr in Connections.InstrumentsList
-            ],
+            "Instrument Name": [instr.data.idn for instr in instr_list],
+            "COM PORT": [instr.scpi_instrument.port for instr in instr_list],
             "BAUD RATE": [
                 instr.scpi_instrument.resource_params["baud_rate"]
-                for instr in Connections.InstrumentsList
+                for instr in instr_list
             ],
-            "IDN": [instr.scpi_instrument.id for instr in Connections.InstrumentsList],
+            "IDN": [instr.scpi_instrument.id for instr in instr_list],
         }
     )
     st.rerun()  # Hack to refresh the page
@@ -55,12 +54,12 @@ def send_command(instr_selected: Instrument_Entry, command: str, uid: str) -> No
 
 
 def save_config():
-    Connections.save_config()
+    conn_obj.save_config()
     st.success("Configuration saved successfully!")
 
 
 def load_config():
-    Connections.load_config()
+    conn_obj.load_config()
     verify_instruments()
     st.success("Configuration loaded successfully!")
 
@@ -115,7 +114,7 @@ instrument_formatted: List[str] = [
     .replace(",", "_")
     .replace(":", "_")
     .replace(" ", "_")
-    for instr in Connections.InstrumentsList
+    for instr in conn_obj.instruments_list
 ]
 
 # Selectbox to choose an instrument
@@ -128,7 +127,7 @@ if curInstrSelected is not None:
 
     # Get the selected instrument object
     curinstrumentIndex: int = instrument_formatted.index(curInstrSelected)
-    curinstrumentObject: Instrument_Entry = Connections.InstrumentsList[
+    curinstrumentObject: Instrument_Entry = conn_obj.instruments_list[
         curinstrumentIndex
     ]
 

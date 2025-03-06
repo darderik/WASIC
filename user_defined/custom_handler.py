@@ -2,10 +2,12 @@ from typing import Optional, List
 from easy_scpi.scpi_instrument import SCPI_Instrument
 from instruments import Instrument_Entry, SCPI_Info
 from serial import Serial
-from config import Config, comm_mode  # Add this line to import Config and comm_mode
+from config import Config  # Add this line to import Config and comm_mode
 from user_defined.instruments import *
 
-init_properties_types: List[type] = [RaspberrySIM, K2000]
+config: Config = Config()
+init_properties_types: List[str] = config.get("init_properties_types", [])
+instr_extensions: List[tuple[str, type]] = config.get("instruments_extensions", [])
 
 
 def check_init_properties(scpi_obj: SCPI_Instrument) -> bool:
@@ -19,8 +21,8 @@ def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
     newComObj: Serial = Serial(scpi_info.port, scpi_info.baud_rate)  # TODO timeout?
     newComObj.close()
 
-    # Fetch from Config.instrumentsExtensions
-    for instr_ext in Config.instruments_extensions:
+    # Fetch from config singleton
+    for instr_ext in instr_extensions:
         if instr_ext[0].lower() in scpi_info.idn.lower():
             newSCPI = instr_ext[1](scpi_info)
             break
@@ -32,7 +34,7 @@ def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
         )
 
     if newSCPI is not None and newComObj is not None:
-        if Config.communication_mode == comm_mode.pyVisa:
+        if config.get("communication_mode", "pyvisa") == "pyvisa":
             if not newSCPI.connected:
                 newSCPI.connect()
             # Lock the instrument resource
@@ -40,7 +42,7 @@ def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
                 data=scpi_info,
                 scpi_instrument=newSCPI,
             )
-        elif Config.communication_mode == comm_mode.serial:
+        elif config.get("communication_mode") == "serial":
             curInstrumentWrapper = Instrument_Entry(data=scpi_info, com_obj=newComObj)
 
     return curInstrumentWrapper

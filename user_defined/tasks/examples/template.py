@@ -43,8 +43,9 @@ def init_mytask_1() -> None:
         instrs_aliases=["raspberry"],
         function=mytask_1,
     )
-    Tasks.tasks_list.append(newTask)  # Add the new task to the tasks list
+    tasks_obj = Tasks()  # Add the new task to the tasks list
+    tasks_obj.add_task(newTask)
 
 
-# Add the task initialization function to the list of task initialization functions
-Tasks.tasks_init_list.append(init_mytask_1)
+# Add following line to an init file to register the task:
+# Tasks.tasks_init_list.append(init_mytask_1)

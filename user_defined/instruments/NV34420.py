@@ -210,4 +210,4 @@ class NV34420(Instrument):
 
 
 # Register the instrument class with its alias
-Config.instruments_extensions.append(("NV34420", NV34420))
+Config().add_instrument_extension(("NV34420", NV34420))

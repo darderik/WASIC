@@ -2,9 +2,13 @@ import streamlit as st
 from typing import List, Optional
 from dataclasses import dataclass
 from connections import Connections
+from config import Config
 from instruments.properties import property_info
 from easy_scpi import Instrument  # Adjust the import path as necessary
 from easy_scpi import Property as Scpi_Property
+
+connections_obj = Connections()
+conf_obj = Config()
 
 
 def send_parameters(instr_properties: List[property_info]) -> None:
@@ -28,7 +32,7 @@ def send_parameters(instr_properties: List[property_info]) -> None:
 
 def instruments_page(alias: str) -> None:
     # Retrieve the instrument based on the alias
-    instr = Connections.get_instrument(alias)
+    instr = connections_obj.get_instrument(alias)
     if instr is not None:
         cur_scpi_instrument: Instrument = instr.scpi_instrument
         instr_name: str = instr.data.idn  # IDN or ALIAS?
@@ -36,12 +40,18 @@ def instruments_page(alias: str) -> None:
         st.subheader(f"🔌 {instr_name}")
 
         # Display Properties if available
-        if (
-            type(cur_scpi_instrument.properties_list) != Scpi_Property
-            and len(cur_scpi_instrument.properties_list) > 0
-        ):
-            instr_properties: List[property_info] = cur_scpi_instrument.properties_list
-
+        str_properties_types: List[str] = conf_obj.get("init_properties_types", [])
+        has_properties: bool = (
+            len(
+                [
+                    is_prop
+                    for is_prop in str_properties_types
+                    if is_prop in str(type(cur_scpi_instrument))
+                ]
+            )
+            > 0
+        )
+        if has_properties:
             # Table Headers
             header_col1, header_col2, header_col3 = st.columns([2, 1, 3])
             with header_col1:
@@ -52,6 +62,7 @@ def instruments_page(alias: str) -> None:
                 st.markdown("**Value**")
             st.divider()
             # Display Each Property
+            instr_properties: List[property_info] = cur_scpi_instrument.properties_list
             for prop in instr_properties:
                 row_col1, row_col2, row_col3 = st.columns([2, 1, 3])
                 with row_col1:
@@ -96,7 +107,7 @@ with st.container():
     # Instrument Selection Dropdown
     instr_selectbox: str = st.selectbox(
         "🔍 Select Instrument",
-        Connections.get_instruments_aliases(idn=True),
+        connections_obj.get_instruments_aliases(idn=True),
         help="Choose an instrument to configure.",
         key="instr_selectbox",
     )

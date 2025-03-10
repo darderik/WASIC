@@ -1,25 +1,21 @@
 import time
-from typing import List, Optional
-
-import pandas as pd
+from typing import List
 import streamlit as st
-from dataclasses import dataclass
 from streamlit.delta_generator import DeltaGenerator
-from connections import Connections
-from easy_scpi import Instrument
-from instruments.properties import property_info
 from tasks import ChartData, Task, Tasks
 from webapp import plot_chart_native, plot_chart_plotly
+
+tasks_obj = Tasks()
 
 
 def set_custom_alias() -> None:
     changedAlias: str = st.session_state["task_alias"]
-    if Tasks._is_running is not None:
-        Tasks._is_running.custom_alias = changedAlias
+    if tasks_obj._is_running is not None:
+        tasks_obj._is_running.custom_alias = changedAlias
 
 
 # Check if a task is currently running
-is_task_running: bool = Tasks._is_running is not None
+is_task_running: bool = tasks_obj._is_running is not None
 
 
 # Set the main title of the page
@@ -29,12 +25,14 @@ st.title("🔧 Tasks Selector")
 with st.container():
     col_task, col_run = st.columns([3, 1])
 
-    relevant_tasks = [tsk.name for tsk in Tasks.tasks_list if tsk.has_instruments()]
+    relevant_tasks = [
+        tsk.name for tsk in tasks_obj._tasks_list if tsk.has_instruments()
+    ]
     if relevant_tasks == []:
         st.warning(
             "No tasks available. Connect the instruments. Attempting to refresh.."
         )
-        Tasks.update_instruments()
+        tasks_obj.update_instruments()
     else:
         with col_task:
             task_selectbox: str = st.selectbox(
@@ -47,7 +45,7 @@ with st.container():
         with col_run:
             st.button(
                 "🚀 Run Task",
-                on_click=Tasks.run_task,
+                on_click=tasks_obj.run_task,
                 args=(task_selectbox,),
                 disabled=is_task_running,
                 key="run_task_button",
@@ -56,17 +54,17 @@ with st.container():
         with col_run:
             st.button(
                 "🔄 Match Instruments",
-                on_click=Tasks.update_instruments,
+                on_click=tasks_obj.update_instruments,
                 key="refresh_matched_instruments",
                 help="Refresh each task's matched instruments.",
             )
 
     # Display task details and controls if a task is running
-    if is_task_running and Tasks._is_running is not None:
+    if is_task_running and tasks_obj._is_running is not None:
         with st.container():
             st.markdown("---")
             st.subheader("⚙️ Current Task")
-            cur_task: Task = Tasks._is_running
+            cur_task: Task = tasks_obj._is_running
 
             # Task Details
             with st.expander("📋 Task Details", expanded=True):
@@ -96,7 +94,7 @@ with st.container():
             with col_stop_task:
                 st.button(
                     "🛑 Stop Task",
-                    on_click=Tasks.kill_task,
+                    on_click=tasks_obj.kill_task,
                     key="stop_task_button",
                     help="Stop the currently running task.",
                     disabled=custom_alias == "",
@@ -114,14 +112,14 @@ with st.container():
                 plots_pholder_list.append(scatter_placeholder)
             # TODO Shall allow to have multiple scatter. Dynamic array with the same amount of charts as the elements of the curdatalist list
             # Placeholder for the scatter chart
-            curDataList: List[ChartData] = Tasks._is_running.data
+            curDataList: List[ChartData] = tasks_obj._is_running.data
             # Continuously update the chart
             if not paused:
-                while Tasks._is_running is not None:
+                while tasks_obj._is_running is not None:
                     for idx, curChartData in enumerate(curDataList):
                         plot_chart_native(curChartData, plots_pholder_list[idx])
                     # Pause loop button
                     time.sleep(2)
             else:
                 for idx, curChartData in enumerate(curDataList):
-                    plot_chart_native(curChartData, plots_pholder_list[idx])
+                    plot_chart_plotly(curChartData, plots_pholder_list[idx])

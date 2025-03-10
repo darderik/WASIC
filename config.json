@@ -1,0 +1,16 @@
+{
+    "instr_aliases": [
+        "Raspberry",
+        "Model 2000",
+        "Relay Matrix"
+    ],
+    "communication_mode": "pyvisa",
+    "instrument_connections_datapath": "data\\instr\\instruments.json",
+    "data_charts_path": "data\\charts",
+    "default_timeout": 0.5,
+    "init_properties_types": [
+        "NV34420",
+        "K2000",
+        "RaspberrySIM"
+    ] 
+}

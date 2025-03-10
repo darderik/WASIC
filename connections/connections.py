@@ -10,7 +10,7 @@ from serial.tools.list_ports_common import ListPortInfo
 from instruments import Instrument_Entry, SCPI_Info
 from easy_scpi import Instrument
 from .utilities import detect_baud_rate, validate_response, detect_baud_wrapper
-from config import Config, comm_mode
+from config import Config
 from user_defined import custom_instr_handler
 
 
@@ -28,10 +28,16 @@ class Connections:
 
     _instrument_lock = threading.Lock()
     _file_lock = threading.Lock()
-    InstrumentsList: List[Instrument_Entry] = list()
+    _instance = None
+    instruments_list: List[Instrument_Entry] = []
 
-    @classmethod
-    def get_instrument(cls, alias: str) -> Optional[Instrument_Entry]:
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(Connections, cls).__new__(cls)
+            cls._config = Config()
+        return cls._instance
+
+    def get_instrument(self, alias: str) -> Optional[Instrument_Entry]:
         """
         Returns an Instrument_Entry object with similiar idn string.
 
@@ -41,28 +47,26 @@ class Connections:
         Returns:
             Optional[Instrument_Entry]: An Instrument_Entry object that matches the alias, or None if no instrument with that alias is found.
         """
-        with cls._instrument_lock:
-            for instr in cls.InstrumentsList:
+        with self._instrument_lock:
+            for instr in self.instruments_list:
                 if alias.lower() in instr.data.idn.lower():
                     return instr
         return None
 
-    @classmethod
-    def get_instruments_aliases(cls, idn: bool = False) -> List[str]:
+    def get_instruments_aliases(self, idn: bool = False) -> List[str]:
         """
         Returns a list of aliases of all instruments in the InstrumentsList.
 
         Returns:
             List[str]: A list of aliases of all instruments in the InstrumentsList.
         """
-        with cls._instrument_lock:
+        with self._instrument_lock:
             if not idn:
-                return [instr.data.alias for instr in cls.InstrumentsList]
+                return [instr.data.alias for instr in self.instruments_list]
             else:
-                return [instr.data.idn for instr in cls.InstrumentsList]
+                return [instr.data.idn for instr in self.instruments_list]
 
-    @classmethod
-    def is_scpi_info_busy(cls, instr_info: SCPI_Info) -> bool:
+    def is_scpi_info_busy(self, instr_info: SCPI_Info) -> bool:
         """
         Checks if the SCPI_Info's port is currently busy (i.e., already in use by an instrument).
 
@@ -72,34 +76,36 @@ class Connections:
         Returns:
             bool: True if the SCPI_Info's port is busy, False otherwise.
         """
-        with cls._instrument_lock:
+        with self._instrument_lock:
             return any(
                 instr.scpi_instrument.port == instr_info.port
-                for instr in cls.InstrumentsList
+                for instr in self.instruments_list
             )
 
-    @classmethod
-    def verify_instruments(cls) -> None:
+    def verify_instruments(self) -> None:
         """
         Verifies the connected instruments based on the configured communication mode.
         Removes instruments that do not respond correctly.
         """
-        with cls._instrument_lock:
-            if Config.communication_mode == comm_mode.pyVisa:
+        with self._instrument_lock:
+            comm_mode: str = self._config.get("comm_mode", "pyvisa")
+            comm_mode = comm_mode.lower()
+            if comm_mode == "pyvisa":
                 valid_instruments = []
-                for instr in cls.InstrumentsList:
+                for instr in self.instruments_list:
                     try:
                         _ = instr.scpi_instrument.id  # Attempt to retrieve ID
                         valid_instruments.append(instr)  # Instrument is valid
                     except Exception as e:
                         instr.scpi_instrument.disconnect()  # Free up COM port lock
-            elif Config.communication_mode == comm_mode.serial:
+            elif comm_mode == "serial":
                 valid_instruments = []
-                for instr in cls.InstrumentsList:
+                for instr in self.instruments_list:
                     try:
+                        timeout: float = self._config.get("default_timeout", 0.5)
                         instr.com_obj.open()
                         instr.com_obj.write(b"*IDN?\n")  # Send identification query
-                        time.sleep(Config.default_timeout)
+                        time.sleep(timeout)
                         response: str = instr.com_obj.read(
                             instr.com_obj.in_waiting
                         ).decode()
@@ -110,11 +116,10 @@ class Connections:
                             instr.com_obj.close()
                     except Exception as e:
                         instr.com_obj.close()
-                cls.InstrumentsList = valid_instruments
-            cls.InstrumentsList = valid_instruments  # Update the InstrumentsList
+                self.instruments_list = valid_instruments
+            self.instruments_list = valid_instruments  # Update the InstrumentsList
 
-    @classmethod
-    def fetch_all_instruments(cls, curAliasesList: List[str]) -> None:
+    def fetch_all_instruments(self, curAliasesList: List[str]) -> None:
         """
         Fetches all instruments based on the provided list of aliases.
 
@@ -126,10 +131,10 @@ class Connections:
         Args:
             curAliasesList (List[str]): A list of instrument aliases to fetch.
         """
-        with cls._instrument_lock:
+        with self._instrument_lock:
             # Busy ports
             curLockedPorts: List[str] = [
-                instr.scpi_instrument.port for instr in cls.InstrumentsList
+                instr.scpi_instrument.port for instr in self.instruments_list
             ]
 
             # Create a list of all comports with correct baud rates
@@ -141,10 +146,11 @@ class Connections:
 
             # Populate with baud rates and idn strings
             threadsList: List[Thread] = []
+            timeout: float = self._config.get("default_timeout", 0.5)
             for port in available_ports:
                 newThread: Thread = Thread(
                     target=detect_baud_wrapper,
-                    args=(port, None, Config.default_timeout, com_idn_baud),
+                    args=(port, None, timeout, com_idn_baud),
                 )
                 newThread.start()
                 threadsList.append(newThread)
@@ -168,62 +174,64 @@ class Connections:
                         scpi_info
                     )
                     if instrument_entry is not None:
-                        cls.InstrumentsList.append(instrument_entry)
+                        self.instruments_list.append(instrument_entry)
                         curLockedPorts.append(scpi_info.port)  # Update locked ports
                     else:
                         raise RuntimeError(
                             f"Failed to create Instrument_Entry for instrument: {alias}"
                         )
 
-    @classmethod
-    def save_config(cls) -> None:
+    def save_config(self) -> None:
         """
         Saves the current configuration of instruments to a JSON file.
         """
-        with cls._file_lock:
+        with self._file_lock:
             instr_info_list: List[SCPI_Info] = [
-                instr.data for instr in cls.InstrumentsList
+                instr.data for instr in self.instruments_list
             ]
             instr_info_json: List[dict[str, Any]] = [
                 asdict(item) for item in instr_info_list
             ]
             try:
-                with open(Config.instrument_config_datapath, "w") as data_file:
+                with open(
+                    self._config.get("instrument_connections_datapath", ""), "w"
+                ) as data_file:
                     json.dump(instr_info_json, data_file, indent=4)
             except Exception as e:
                 # Handle file write errors if necessary
                 raise RuntimeError(f"Failed to save configuration: {e}")
 
-    @classmethod
-    def load_config(cls) -> None:
+    def load_config(self) -> None:
         """
         Loads the configuration of instruments from a JSON file.
         If the configuration file does not exist, fetches all instruments based on the configured aliases.
         """
-        with cls._file_lock:
+        with self._file_lock:
             try:
-                with open(Config.instrument_config_datapath, "r") as data_file:
+                with open(
+                    self._config.get("instrument_connections_datapath", ""), "r"
+                ) as data_file:
                     instr_info_json: List[dict[str, Any]] = json.load(data_file)
                     instr_info_list: List[SCPI_Info] = [
                         SCPI_Info(**item) for item in instr_info_json
                     ]
                 for instr_info in instr_info_list:
-                    if not cls.is_scpi_info_busy(instr_info):
+                    if not self.is_scpi_info_busy(instr_info):
                         instrument_entry: Optional[Instrument_Entry] = (
                             custom_instr_handler(instr_info)
                         )
                         if instrument_entry is not None:
-                            cls.InstrumentsList.append(instrument_entry)
+                            self.instruments_list.append(instrument_entry)
                         else:
                             raise RuntimeError(
                                 f"Failed to create Instrument_Entry for instrument: {instr_info.idn}"
                             )
             except FileNotFoundError:
                 # No previous configuration found; fetch instruments based on configured aliases
-                cls.fetch_all_instruments(Config.instrAliasesList)
+                self.fetch_all_instruments(self._config.get("instr_aliases", []))
             except json.JSONDecodeError as e:
                 # Handle JSON parsing errors if necessary
                 raise RuntimeError(f"Failed to parse configuration file: {e}")
             except Exception as e:
                 # Handle other unforeseen exceptions
-                Connections.fetch_all_instruments(Config.instrAliasesList)
+                self.fetch_all_instruments(self._config.get("instr_aliases", []))

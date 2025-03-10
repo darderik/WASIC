@@ -274,4 +274,4 @@ class K2000(Instrument):
 
 
 # Mandatory append to register instrument class with its alias
-Config.instruments_extensions.append(("MODEL 2000", K2000))
+Config().add_instrument_extension(("Keithley 2000", K2000))

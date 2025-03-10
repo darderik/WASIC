@@ -59,5 +59,5 @@ with st.container():
 
         st.markdown(f"**Chart Title:** {chart_data.name}")
         placeholder = st.empty()
-        plot_chart_native(chart_data, placeholder)
+        plot_chart_plotly(chart_data, placeholder)
         st.divider()

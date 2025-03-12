@@ -41,6 +41,7 @@ def instruments_page(alias: str) -> None:
 
         # Display Properties if available
         str_properties_types: List[str] = conf_obj.get("init_properties_types", [])
+        # Hacky way for converting the class name to string
         has_properties: bool = (
             len(
                 [
@@ -52,52 +53,51 @@ def instruments_page(alias: str) -> None:
             > 0
         )
         if has_properties:
-            # Table Headers
-            header_col1, header_col2, header_col3 = st.columns([2, 1, 3])
-            with header_col1:
-                st.markdown("**Property**")
-            with header_col2:
-                st.markdown("**Type**")
-            with header_col3:
-                st.markdown("**Value**")
-            st.divider()
-            # Display Each Property
             instr_properties: List[property_info] = cur_scpi_instrument.properties_list
-            for prop in instr_properties:
-                row_col1, row_col2, row_col3 = st.columns([2, 1, 3])
-                with row_col1:
-                    st.write(f"{prop.alias}:")
-                with row_col2:
-                    st.write(f"{prop.typecheck.__name__}")
-                with row_col3:
-                    if prop.typecheck == bool:
-                        st.radio(
-                            "Select",
-                            ["ON", "OFF"],
-                            key=f"{prop.alias}_input",
-                            index=(
+            with st.form(key="properties_form"):
+                # Table headers for a clean look
+                col_prop, col_type, col_value = st.columns([2, 1, 3])
+                with col_prop:
+                    st.markdown("**Property**")
+                with col_type:
+                    st.markdown("**Type**")
+                with col_value:
+                    st.markdown("**Value**")
+                st.markdown("---")
+                # Iterate over each property to create input widgets
+                for prop in instr_properties:
+                    row_col1, row_col2, row_col3 = st.columns([2, 1, 3])
+                    with row_col1:
+                        st.write(prop.alias)
+                    with row_col2:
+                        st.write(prop.typecheck.__name__)
+                    with row_col3:
+                        if prop.typecheck == bool:
+                            # Use radio with no label to save space
+                            default_idx = (
                                 0
                                 if Scpi_Property.val2bool(prop.associated_getter())
                                 else 1
-                            ),
-                            horizontal=True,
-                        )
-                    else:
-                        st.text_input(
-                            "Enter Value",
-                            value=prop.associated_getter(),
-                            key=f"{prop.alias}_input",
-                        )
-                st.divider()
-            # Send Parameters Button
-            st.button(
-                "📤 Send Parameters",
-                on_click=send_parameters,
-                args=(instr_properties,),
-                key="send_parameters_button",
-                disabled=False,
-                help="Click to send the updated parameters to the instrument.",
-            )
+                            )
+                            st.radio(
+                                "",
+                                ["ON", "OFF"],
+                                key=f"{prop.alias}_input",
+                                index=default_idx,
+                                horizontal=True,
+                            )
+                        else:
+                            st.text_input(
+                                "",
+                                value=prop.associated_getter(),
+                                key=f"{prop.alias}_input",
+                            )
+                # Submit button to apply changes
+                st.form_submit_button(
+                    "📤 Send Parameters",
+                    on_click=send_parameters,
+                    args=(instr_properties,),
+                )
 
 
 with st.container():

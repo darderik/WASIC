@@ -12,5 +12,6 @@
         "NV34420",
         "K2000",
         "RaspberrySIM"
-    ] 
+    ],
+    "log_level": "INFO"
 }

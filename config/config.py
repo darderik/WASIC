@@ -2,6 +2,7 @@ from typing import List
 from enum import Enum
 from threading import RLock
 import json
+import logging
 
 default_config = {
     "instr_aliases": ["Raspberry", "Model 2000", "Relay Matrix"],
@@ -10,7 +11,13 @@ default_config = {
     "data_charts_path": "data\\charts",
     "default_timeout": 0.5,
     "init_properties_types": ["NV34420", "K2000", "RaspberrySIM"],
+    "log_level": "INFO",
 }
+# In init_properties_types one shall add class names of instruments that are
+# meant to display properties on the webapp
+
+# In instr_aliases one shall add keyword to look for while parsing the idn string
+logger = logging.getLogger(__name__)
 
 
 class Config:
@@ -35,14 +42,18 @@ class Config:
             with open(config_path, "r") as file:
                 self._data = json.load(file)
         except FileNotFoundError:
+            logger.warning(
+                f"Configuration file not found at {config_path}. Creating..."
+            )
             # Create file with default values
             with open(config_path, "w") as file:
                 json.dump(default_config, file, indent=4)
             self._data = default_config
         except json.JSONDecodeError:
+            logger.error(
+                f"Error decoding configuration file at {config_path}. Using default configuration."
+            )
             self._data = default_config
-            # TODO: Log error decoding
-            pass
 
     def add_instrument_extension(self, instr_extension: tuple[str, type]):
         """
@@ -51,6 +62,7 @@ class Config:
         Args:
             instr_extension (Any): The instrument extension to add.
         """
+        logger.debug(f"Adding instrument extension: {instr_extension}")
         self._data["instruments_extensions"].append(instr_extension)
 
     def get(self, key, default=None):
@@ -71,5 +83,11 @@ class Config:
             - data_charts_path (str): Path to the directory for data charts.
             - default_timeout (float): Default timeout value in seconds.
             - instruments_extensions (List[Any]): List of instrument extensions.
+            - init_properties_types (List[str]): List of instrument class names to display properties.
         """
-        return self._data.get(key, default)
+        return_val = self._data.get(key, default)
+        if key not in self._data:
+            logger.warning(
+                f"Key {key} not found in configuration. Using default value: {default}"
+            )
+        return return_val

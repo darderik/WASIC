@@ -23,7 +23,7 @@ def verify_instruments(mode: int = 0):
     instr_list: List[Instrument_Entry] = conn_obj.instruments_list
     st.session_state["instr_table"] = pd.DataFrame(
         {
-            "Instrument Name": [instr.data.idn for instr in instr_list],
+            "Instrument Name": [instr.data.name for instr in instr_list],
             "COM PORT": [instr.scpi_instrument.port for instr in instr_list],
             "BAUD RATE": [
                 instr.scpi_instrument.resource_params["baud_rate"]
@@ -47,7 +47,7 @@ def send_command(instr_selected: Instrument_Entry, command: str, uid: str) -> No
             instr_selected.write_wrapper(command)
             st.session_state[
                 f"{uid}_buffer_output"
-            ] += f"{instr_selected.data.alias}: {command}\n"
+            ] += f"{instr_selected.data.name}: {command}\n"
             st.success("Command executed successfully")
     except RuntimeError as exception:
         st.error(f"An error occurred: {exception}")
@@ -118,6 +118,7 @@ instrument_formatted: List[str] = [
 ]
 
 # Selectbox to choose an instrument
+# curInstrSelected will be basically the full idn string
 curInstrSelected: str = st.selectbox("🔍 Select Instrument", instrument_formatted)
 
 if curInstrSelected is not None:

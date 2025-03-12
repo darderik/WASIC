@@ -77,7 +77,7 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
     sm2401_entry: Optional[Instrument_Entry] = connection_obj.get_instrument(
         "model 2401"
     )
-    nv34420_entry: Optional[Instrument_Entry] = connection_obj.get_instrument("34420")
+    nv34420_entry: Optional[Instrument_Entry] = connection_obj.get_instrument("34420A")
 
     if (
         relay_entry is None

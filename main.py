@@ -1,24 +1,27 @@
 import os
-from connections import Connections
 import streamlit.web.bootstrap
-from instruments import Instrument_Entry
-from easy_scpi.scpi_instrument import SCPI_Instrument
-from instruments import SCPI_Info
-from serial import Serial
-from tasks import Task, Tasks, ChartData
+import logging
 from config import Config
-from user_defined import custom_instr_handler
+
+# Import for forcing initialization of tasks
 from user_defined.tasks import *
 
 
 def main():
-    # Init tasks
+
+    # Logger init
+    logging.basicConfig(
+        level=Config().get("log_level", "NOTSET"),
+        filename=os.path.join("data", "wasic.log"),
+        filemode="w",
+    )
+    # Override disable logger
+    logging.disable()
+
+    # Streamlit boot
     script_path = os.path.abspath("streamlit_app.py")
-
-    # Avvio di Streamlit
+    logging.basicConfig(level="INFO")
     streamlit.web.bootstrap.run(script_path, False, [], {})
-
-    print("Streamlit has terminated.")
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ class SCPI_Info:
     baud_rate: int
     idn: str = ""
     alias: str = ""
+    name: str = ""
 
 
 @dataclass
@@ -37,7 +38,7 @@ class Instrument_Entry:
     _config: Config = Config()
 
     def write_wrapper(self, command: str) -> None:
-        if self._config.get("comm_mode", "pyvisa") == "pyvisa":
+        if self._config.get("communication_mode", "pyvisa") == "pyvisa":
             self.scpi_instrument.write(command)
         else:
             if not self.com_obj.is_open:
@@ -50,7 +51,7 @@ class Instrument_Entry:
         # The CLS handling should be implemented in the children classes
         # Refer to test_instrument example
         toReturn: str = ""
-        if self._config.get("comm_mode", "pyvisa") == "pyvisa":
+        if self._config.get("communication_mode", "pyvisa") == "pyvisa":
             toReturn = self.scpi_instrument.read()
         else:
             if not self.com_obj.is_open:
@@ -65,7 +66,7 @@ class Instrument_Entry:
         # The CLS handling should be implemented in the children classes
         # Refer to test_instrument example
         toReturn: str = ""
-        if self._config.get("comm_mode", "pyvisa") == "pyvisa":
+        if self._config.get("communication_mode", "pyvisa") == "pyvisa":
             toReturn = self.scpi_instrument.query(command)
         else:
             if not self.com_obj.is_open:

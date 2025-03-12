@@ -24,7 +24,9 @@ import string
 import serial
 from typing import Tuple, List, Optional, Any
 from config import Config
+import logging
 
+logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 1  # seconds
 BAUDRATES = (
     110,
@@ -63,6 +65,7 @@ def detect_baud_rate(
     detected_baud_rate: int = 0
     with serial.Serial(port) as ser:
         for baudrate in baudrates:
+            logger.debug(f"Trying baudrate: {baudrate} on port {port}")
             ser.baudrate = baudrate
             ser.timeout = timeout
             ser.write(b"\n\n\n\n")  # Flush
@@ -73,6 +76,9 @@ def detect_baud_rate(
                 _ = ser.read(ser.in_waiting)
 
             if validate_response(response):
+                logger.debug(
+                    f"Detected baudrate: {baudrate} on port {port} with response: {response}"
+                )
                 detected_baud_rate = baudrate
                 current_idn = response.decode().strip()
                 break

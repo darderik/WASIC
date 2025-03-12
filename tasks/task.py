@@ -7,6 +7,10 @@ from .structures import ChartData
 from connections import Connections
 import json
 import datetime
+import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Task:
@@ -93,7 +97,10 @@ class Task:
                     "custom_name": chart.custom_name,
                 },
                 open(
-                    file=f"{self._config.get("data_charts_path")}\\{chart.name}_{additional_file_name}.json",
+                    file=os.path.join(
+                        f"{self._config.get("data_charts_path")}",
+                        f"{chart.name}_{additional_file_name}.json",
+                    ),
                     mode="w",
                 ),
                 skipkeys=True,
@@ -129,6 +136,7 @@ class Tasks:
             cls._tasks_list: List[Task] = []
             cls._is_running: Optional[Task] = None
             cls.tasks_init_list: List[Callable[[], None]] = []
+            logger.info("Tasks resource instance instantiated(singleton)")
         return cls._instance
 
     def add_init_task(self, task: Callable[[], None]) -> None:
@@ -141,6 +149,9 @@ class Tasks:
         self.tasks_init_list.append(task)
         # Execute the task initialization function
         task()
+        logger.info(
+            f"Task's init function {task.__name__} added to the tasks init list"
+        )
 
     def init_tasks(self) -> None:
         for init_task in self.tasks_init_list:
@@ -183,9 +194,12 @@ class Tasks:
         if self._is_running is None:
             for task in self._tasks_list:
                 if task.name == name:
+                    logger.info(f"Running task: {task.name}")
                     task._spawn()
                     self._is_running = task
                     break
+        else:
+            logger.warning(f"A task is already running. Aborting launch of task {name}")
 
     def kill_task(self) -> None:
         """
@@ -194,6 +208,7 @@ class Tasks:
         if self._is_running is not None:
             self._is_running._stop()
             self._is_running = None
+            logger.info("Task stopped.")
 
     def add_task(self, task: Task) -> None:
         """

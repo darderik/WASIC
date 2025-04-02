@@ -1,15 +1,13 @@
 from tasks import Task, Tasks, ChartData
 import random
-from typing import Optional, Any, Union, Dict, List
+from typing import Optional, List
 from instruments import Instrument_Entry
 from connections import Connections
-from multiprocessing.managers import ValueProxy
 from ...instruments import RaspberrySIM
-from easy_scpi import Instrument
 import time
-from threading import Thread, Event, Lock
+from threading import Thread, Event
 import math
-from ..utilities import spawn_data_processor, apply_formula, generic_processor
+from ..utilities import spawn_data_processor, generic_processor
 import logging
 
 

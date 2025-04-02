@@ -1,6 +1,8 @@
 # WASIC
 
 WASIC is a Python project that provides basic features for managing various data inputs and tasks concering serial instruments. This README includes instructions for installation and usage on Windows and Linux (Debian/Ubuntu).
+![wasic](https://github.com/user-attachments/assets/da8c8e13-4d24-4402-8154-fd600ddf6cf3)
+
 
 ## Table of Contents
 - [Requirements](#requirements)
@@ -16,10 +18,13 @@ WASIC is a Python project that provides basic features for managing various data
 Make sure you have the following tools installed:
 
 - **Git**: Required to clone the repository.
-- **Python**: A recent version of Python is required (Python 3.x recommended).
+- **Python**: A recent version of Python is required (Python 3.13+ recommended).
 - **Package Manager**:
   - **Windows**: Chocolatey
   - **Linux**: apt
+
+
+
 
 ## Installation
 

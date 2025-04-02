@@ -29,10 +29,11 @@ with st.container():
         tsk.name for tsk in tasks_obj._tasks_list if tsk.has_instruments()
     ]
     if relevant_tasks == []:
-        st.warning(
-            "No tasks available. Connect the instruments. Attempting to refresh.."
+        st.warning("No tasks available. Connect the instruments and refresh..")
+        st.button(
+            "Refresh Instruments", on_click=tasks_obj.update_instruments, args=(1,)
         )
-        tasks_obj.update_instruments()
+
     else:
         with col_task:
             task_selectbox: str = st.selectbox(
@@ -94,13 +95,16 @@ with st.container():
             with col_stop_task:
                 st.button(
                     "🛑 Stop Task",
-                    on_click=tasks_obj.kill_task,
+                    on_click=tasks_obj.stop_task,
                     key="stop_task_button",
                     help="Stop the currently running task.",
                     disabled=custom_alias == "",
                 )
         paused = st.checkbox("Pause Data", False)
         plots_pholder_list: List[DeltaGenerator] = []
+
+        # Custom GUI if specified in the task object
+        #   with st.container():
 
         # Display Data Visualization
         with st.container():
@@ -110,16 +114,16 @@ with st.container():
                 # Placeholder for the scatter chart
                 scatter_placeholder = st.empty()
                 plots_pholder_list.append(scatter_placeholder)
-            # TODO Shall allow to have multiple scatter. Dynamic array with the same amount of charts as the elements of the curdatalist list
-            # Placeholder for the scatter chart
-            curDataList: List[ChartData] = tasks_obj._is_running.data
-            # Continuously update the chart
-            if not paused:
-                while tasks_obj._is_running is not None:
+                # TODO Shall allow to have multiple scatter. Dynamic array with the same amount of charts as the elements of the curdatalist list
+                # Placeholder for the scatter chart
+                curDataList: List[ChartData] = tasks_obj._is_running.data
+                # Continuously update the chart
+                if not paused:
+                    while tasks_obj._is_running is not None:
+                        for idx, curChartData in enumerate(curDataList):
+                            plot_chart_native(curChartData, plots_pholder_list[idx])
+                        # Pause loop button
+                        time.sleep(2)
+                else:
                     for idx, curChartData in enumerate(curDataList):
-                        plot_chart_native(curChartData, plots_pholder_list[idx])
-                    # Pause loop button
-                    time.sleep(2)
-            else:
-                for idx, curChartData in enumerate(curDataList):
-                    plot_chart_plotly(curChartData, plots_pholder_list[idx])
+                        plot_chart_plotly(curChartData, plots_pholder_list[idx])

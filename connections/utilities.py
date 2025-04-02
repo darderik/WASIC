@@ -94,13 +94,14 @@ def validate_response(response: bytes) -> bool:
         return False
 
 
-def detect_baud_wrapper(
-    port, data, timeout: float, target_list: List[Tuple[str, str, int]]
-) -> None:
+def detect_baud_wrapper(port, data, timeout: float) -> Tuple[str, str, int] | None:
     config = Config()
     BR_IDN: Optional[Tuple[int, str]] = detect_baud_rate(
         port=port, timeout=config.get("default_timeout", 0.5), data=data
     )
     # PORT, IDN, BAUD
     if BR_IDN is not None:
-        target_list.append((port, BR_IDN[1], BR_IDN[0]))
+        return (port, BR_IDN[1], BR_IDN[0])
+    else:
+        logger.debug(f"Failed to detect baud rate for port {port}")
+        return None

@@ -8,6 +8,7 @@ WASIC is a Python project that provides basic features for managing various data
   - [Windows](#windows)
   - [Linux (Debian/Ubuntu)](#linux-debianubuntu)
 - [Usage](#usage)
+- [Structure](#structure)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -95,6 +96,7 @@ After completing the installation, you can run the project with:
   ```bash
   python3 main.py
   ```
+## Structure
 
 ## Contributing
 

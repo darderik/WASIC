@@ -1,1 +1,9 @@
-[]
+[
+    {
+        "port": "COM3",
+        "baud_rate": 115200,
+        "idn": "Keithley,Raspberry PI Simulator,12345,1.0",
+        "alias": "Raspberry",
+        "name": "Keithley Raspberry PI Simulator"
+    }
+]

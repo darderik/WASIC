@@ -15,8 +15,7 @@ def main():
         filename=os.path.join("data", "wasic.log"),
         filemode="w",
     )
-    # Override disable logger
-    logging.disable()
+    logging.info("Starting Wasic...")
 
     # Streamlit boot
     script_path = os.path.abspath("streamlit_app.py")

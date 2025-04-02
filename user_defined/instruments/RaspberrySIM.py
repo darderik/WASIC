@@ -75,10 +75,10 @@ class RaspberrySIM(Instrument):
         """
         Returns the voltage reading.
         """
-        return self.voltage()
+        return float(self.voltage())
 
     @voltp.setter
-    def voltp(self, volts):
+    def voltp(self, volts: float):
         """
         Sets the voltage of the instrument.
         """

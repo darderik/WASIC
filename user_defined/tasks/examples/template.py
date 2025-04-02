@@ -10,6 +10,7 @@ import time
 from threading import Thread, Event, Lock
 import math
 from ..utilities import spawn_data_processor, apply_formula, generic_processor
+import logging
 
 
 def example_math_formula(x: float) -> float:
@@ -23,16 +24,36 @@ def mytask_1(data: List[ChartData], exit_flag: Event) -> None:
     cur_chart_data_1: ChartData = ChartData(
         name="Square root of values", math_formula_y=example_math_formula
     )
-    cur_chart_data_2: ChartData = ChartData(
-        name="Real values vs Square root", math_formula_y=example_math_formula
-    )
     data.append(cur_chart_data_1)  # Add the new chart data to the data list
-    data.append(cur_chart_data_2)  # Add the new chart data to the data list
 
+    # Explicit cast required
+    conn_object = Connections()
+    logger = logging.getLogger(__name__)
+    instr_entry: Optional[Instrument_Entry] = conn_object.get_instrument(
+        "raspberry"
+    )  # May also use serial number
+    if instr_entry is not None:
+        myInstrument: RaspberrySIM = instr_entry.scpi_instrument
+    else:
+        logger.error("Instrument not found")
+        exit_flag.set()
+        return
     # A single data processor function should handle all charts data associated within the task
     newThreadProcessor: Thread = spawn_data_processor(
         data, exit_flag, generic_processor
     )
+    try:
+        while not exit_flag.is_set():
+            curV = myInstrument.voltp
+            cur_chart_data_1.x.append(curV)  # append x
+            cur_chart_data_1.raw_y.append(curV)  # append raw y and apply math formula
+            myInstrument.voltp = random.uniform(0, 5)  # Set a random voltage value
+            time.sleep(1)
+    except Exception as e:
+        logger.error(f"Error in task: {e}")
+    finally:
+        exit_flag.set()
+        newThreadProcessor.join()
 
 
 def init_mytask_1() -> None:

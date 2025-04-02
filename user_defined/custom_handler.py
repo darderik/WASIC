@@ -7,16 +7,16 @@ from user_defined.instruments import *
 import logging
 
 config: Config = Config()
-init_properties_types: List[str] = config.get("init_properties_types", [])
-instr_extensions: List[tuple[str, type]] = config.get("instruments_extensions", [])
 logger = logging.getLogger(__name__)
 
 
 def check_init_properties(scpi_obj: SCPI_Instrument) -> bool:
+    init_properties_types: List[str] = config.get("init_properties_types", [])
     return type(scpi_obj) in init_properties_types
 
 
 def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
+    instr_extensions: List[tuple[str, type]] = config.get("instruments_extensions", [])
     newSCPI: SCPI_Instrument = None
     curInstrumentWrapper: Optional[Instrument_Entry] = None
     # Serial auxiliar object

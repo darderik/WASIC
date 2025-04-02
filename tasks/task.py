@@ -16,16 +16,6 @@ logger = logging.getLogger(__name__)
 class Task:
     """
     Represents a single task that can be run in a separate thread.
-
-    Attributes:
-        name (str): The name of the task.
-        description (str): A description of what the task does.
-        instruments (List[Optional[Instrument_Entry]]): A list of associated instrument entries.
-        function (Callable): The function to execute in the thread.
-        data (Dict[str, Any]): Shared data dictionary for the task.
-        exit_flag (Event): Event to signal the thread to stop.
-        thread_handle (Optional[Thread]): Reference to the running thread.
-        lock (Lock): A lock to ensure thread-safe operations on shared data.
     """
 
     def __init__(
@@ -34,202 +24,156 @@ class Task:
         description: str,
         instrs_aliases: List[str],
         function: Callable[[List[ChartData], Event], None],
-        data: List[ChartData] = [],
-        exit_flag: Event = Event(),
-        instruments: List[Optional[Instrument_Entry]] = [],
+        data: Optional[List[ChartData]] = None,
         custom_alias: str = "",
+        custom_web_status: Optional[Callable] = None,
     ):
-        """
-        Initializes a Task instance.
-
-        Args:
-            name (str): The name of the task.
-            description (str): A description of the task.
-            instrs (List[Optional[Instrument_Entry]]): A list of instrument entries associated with the task.
-            function (Callable): The function to execute in the thread. It should accept a data dictionary and an exit event.
-        """
-        self.name: str = name
-        self.description: str = description
-        self.instr_aliases: List[str] = instrs_aliases
+        self.name = name
+        self.description = description
+        self.instr_aliases = instrs_aliases
+        self.data = data if data is not None else []  # Initialize if None
+        self.exit_flag = Event()
+        self.instruments: List[Optional[Instrument_Entry]] = []
+        self.function = function
+        self.custom_alias = custom_alias
+        self._config = Config()
+        self.custom_web_status = custom_web_status
         self.thread_handle: Optional[Thread] = None
-        self.data: List[ChartData] = data
-        self.exit_flag: Event = exit_flag
-        self.instruments: List[Optional[Instrument_Entry]] = instruments
-        self.function: Callable[[List[ChartData], Event], None] = function
-        self.custom_alias: str = custom_alias
-        self._config: Config = Config()
 
-    def _spawn(self) -> None:
-        """
-        Starts the task's function in a new non-blocking thread.
-        """
+    def start(self) -> None:
+        """Starts the task's function in a new non-blocking thread if not already running."""
+        if self.thread_handle is None or not self.thread_handle.is_alive():
+            self.exit_flag.clear()
+            self.thread_handle = Thread(
+                target=self.function, args=(self.data, self.exit_flag), daemon=True
+            )
+            self.thread_handle.start()
+            logger.info(f"Task {self.name} started.")
+        else:
+            logger.warning(f"Task {self.name} is already running.")
 
-        self.exit_flag.clear()
-        self.thread_handle = Thread(target=self._run, daemon=True)
-        self.thread_handle.start()
-
-    def _run(self) -> None:
-        """
-        Runs the task's function, passing the shared data and exit flag.
-        """
-        self.function(self.data, self.exit_flag)
-
-    def _stop(self) -> None:
-        """
-        Signals the thread to stop and waits for it to finish.
-        """
+    def stop(self) -> None:
+        """Signals the task to stop and waits for the thread to finish."""
         if self.thread_handle and self.thread_handle.is_alive():
             self.exit_flag.set()
             self.thread_handle.join()
             self.thread_handle = None
-        # Save chartdata to file(s)
-        for chart in self.data:
-            additional_file_name = f"{self.custom_alias}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
-            json.dump(
-                {
-                    "x": chart.x,
-                    "y": chart.y,
-                    "raw_x": chart.raw_x,
-                    "raw_y": chart.raw_y,
-                    "x_label": chart.x_label,
-                    "y_label": chart.y_label,
-                    "info": chart.info,
-                    "custom_name": chart.custom_name,
-                },
-                open(
-                    file=os.path.join(
-                        f"{self._config.get("data_charts_path")}",
-                        f"{chart.name}_{additional_file_name}.json",
-                    ),
-                    mode="w",
-                ),
-                skipkeys=True,
-                ensure_ascii=False,
-                indent=4,
-            )
+            logger.info(f"Task {self.name} stopped.")
+            self._save_chart_data()
         self.data.clear()
 
+    def _save_chart_data(self) -> None:
+        """Saves collected chart data to files."""
+        for chart in self.data:
+            try:
+                file_name = f"{chart.name}_{self.custom_alias}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"
+                file_path = os.path.join(
+                    self._config.get("data_charts_path"), file_name
+                )
+                with open(file_path, mode="w") as file:
+                    json.dump(
+                        {
+                            "x": chart.x,
+                            "y": chart.y,
+                            "raw_x": chart.raw_x,
+                            "raw_y": chart.raw_y,
+                            "x_label": chart.x_label,
+                            "y_label": chart.y_label,
+                            "info": chart.info,
+                            "custom_name": chart.custom_name,
+                        },
+                        file,
+                        skipkeys=True,
+                        ensure_ascii=False,
+                        indent=4,
+                    )
+                logger.info(f"Chart data saved to {file_path}.")
+            except Exception as e:
+                logger.error(f"Failed to save chart data for {chart.name}: {e}")
+
     def has_instruments(self) -> bool:
-        aliases: List[str] = self.instr_aliases
-        for alias in aliases:
-            conn_obj: Connections = Connections()
-            instr = conn_obj.get_instrument(alias)
-            if instr is None:
-                return False
-        return True
+        """Checks if all associated instruments are available."""
+        conn_obj = Connections()
+        return all(
+            conn_obj.get_instrument(alias) is not None for alias in self.instr_aliases
+        )
 
 
 class Tasks:
     """
-    Manages multiple Task instances.
-
-    Attributes:
-        tasks_list (List[Task]): A list of all available tasks.
-        _is_running (Optional[Task]): The currently running task, if any.
+    Singleton class to manage multiple Task instances.
     """
 
     _instance = None
+    _lock = Lock()  # Add a lock for thread safety
 
     def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._tasks_list: List[Task] = []
-            cls._is_running: Optional[Task] = None
-            cls.tasks_init_list: List[Callable[[], None]] = []
-            logger.info("Tasks resource instance instantiated(singleton)")
+        with cls._lock:  # Ensure thread-safe singleton creation
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+                cls._tasks_list: List[Task] = []
+                cls._is_running: Optional[Task] = None
+                cls._tasks_init_list: List[Callable[[], None]] = []
+                logger.info("Tasks manager instance created.")
         return cls._instance
 
     def add_init_task(self, task: Callable[[], None]) -> None:
-        """
-        Adds a task initialization function to the tasks init list.
-
-        Args:
-            task (Callable[[], None]): The task initialization function to add.
-        """
-        self.tasks_init_list.append(task)
-        # Execute the task initialization function
+        """Adds and initializes a task."""
+        self._tasks_init_list.append(task)
         task()
-        logger.info(
-            f"Task's init function {task.__name__} added to the tasks init list"
-        )
+        logger.info(f"Task initialization function {task.__name__} added and executed.")
 
     def init_tasks(self) -> None:
-        for init_task in self.tasks_init_list:
+        """Initializes all tasks in the initialization list."""
+        for init_task in self._tasks_init_list:
             init_task()
 
-    def is_running_get(self) -> Optional[Task]:
-        """
-        Retrieves the currently running task.
-
-        Returns:
-            Optional[Task]: The currently running task, or None if no task is running.
-        """
-        return self._is_running
-
-    def is_running_set(self, task: Optional[Task]) -> None:
-        """
-        Sets the currently running task.
-
-        Args:
-            task (Optional[Task]): The task to set as running, or None to indicate no task is running.
-        """
-        self._is_running = task
-
-    def update_instruments(self) -> None:
-        for tsk in self._tasks_list:
-            tsk.instruments = []
-            for instr_alias in tsk.instr_aliases:
-                conn_obj: Connections = Connections()
-                instr = conn_obj.get_instrument(instr_alias)
-                if instr is not None:
-                    tsk.instruments.append(instr)
+    def update_instruments(self, mode: int = 0) -> None:
+        """Updates the instruments for all tasks."""
+        with self._lock:
+            for tsk in self._tasks_list:
+                tsk.instruments = []
+                if mode:
+                    Connections().fetch_all_instruments(Config().get("instr_aliases"))
+                for instr_alias in tsk.instr_aliases:
+                    conn_obj: Connections = Connections()
+                    instr = conn_obj.get_instrument(instr_alias)
+                    if instr is not None:
+                        tsk.instruments.append(instr)
 
     def run_task(self, name: str) -> None:
-        """
-        Runs a task by its name if no other task is currently running.
+        """Runs a task by its name if no other task is currently running."""
+        with self._lock:
+            if self._is_running is None:
+                for task in self._tasks_list:
+                    if task.name == name and task.has_instruments():
+                        task.start()
+                        self._is_running = task
+                        break
+            else:
+                logger.warning(
+                    f"A task is already running ({self._is_running.name}). "
+                    f"Aborting launch of task {name}."
+                )
 
-        Args:
-            name (str): The name of the task to run.
-        """
-        if self._is_running is None:
-            for task in self._tasks_list:
-                if task.name == name:
-                    logger.info(f"Running task: {task.name}")
-                    task._spawn()
-                    self._is_running = task
-                    break
-        else:
-            logger.warning(f"A task is already running. Aborting launch of task {name}")
-
-    def kill_task(self) -> None:
-        """
-        Stops the currently running task, if any.
-        """
-        if self._is_running is not None:
-            self._is_running._stop()
-            self._is_running = None
-            logger.info("Task stopped.")
+    def stop_task(self) -> None:
+        """Stops the currently running task, if any."""
+        with self._lock:
+            if self._is_running is not None:
+                self._is_running.stop()
+                self._is_running = None
+                logger.info("Task stopped.")
 
     def add_task(self, task: Task) -> None:
-        """
-        Adds a new task to the tasks list.
-
-        Args:
-            task (Task): The task to add.
-        """
-        self._tasks_list.append(task)
+        """Adds a new task to the task list."""
+        with self._lock:
+            if any(t.name == task.name for t in self._tasks_list):
+                logger.warning(f"Task {task.name} already exists in the task list.")
+                return
+            self._tasks_list.append(task)
+            logger.info(f"Task {task.name} added to the task list.")
 
     def get_task(self, name: str) -> Optional[Task]:
-        """
-        Retrieves a task by its name.
-
-        Args:
-            name (str): The name of the task to retrieve.
-
-        Returns:
-            Optional[Task]: The task with the given name, or None if not found.
-        """
-        for task in self._tasks_list:
-            if task.name == name:
-                return task
-        return None
+        """Retrieves a task by its name."""
+        with self._lock:
+            return next((task for task in self._tasks_list if task.name == name), None)

@@ -246,4 +246,4 @@ class SM2401(Instrument):
 
 
 # Append to register the instrument class with its alias
-Config().add_instrument_extension(("SM2401", SM2401))
+Config().add_instrument_extension(("Model 2401", SM2401))

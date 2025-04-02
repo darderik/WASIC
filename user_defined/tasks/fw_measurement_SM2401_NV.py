@@ -10,6 +10,7 @@ from instruments import Instrument_Entry
 from user_defined.instruments import RelayMatrix, K2000, SM2401, NV34420
 from user_defined.tasks.utilities import spawn_data_processor, generic_processor
 from connections import Connections
+import streamlit as st
 
 
 def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
@@ -24,7 +25,7 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
       4. Spawns a background data processing thread.
       5. Enters a loop that:
            a. Alternates relay connections to measure horizontal and vertical resistances.
-           b. Employs a delta measurement technique to minimize errors.
+           b. Employs a delta measurement technique
            c. Calculates the sheet resistance via the Van der Pauw method.
            d. Updates the ChartData objects accordingly.
       6. Exits loop and cleans up once the exit_flag is set.
@@ -128,11 +129,13 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
             # Perform delta measurements due to thermo-electric effects
             probe_resistances.append(k2000.read_measurement())
             sm2401.current = abs(sm2401.current)
+            time.sleep(11e-3)  # Wait for the current to stabilize with autorange on
             I_pos = sm2401.read_meas()
             V_pos = nv34420.read_meas()  # TODO: sleep?
 
             probe_resistances.append(k2000.read_measurement())
             sm2401.current = -abs(sm2401.current)
+            time.sleep(11e-3)
             I_neg = sm2401.read_meas()
             V_neg = nv34420.read_meas()
 
@@ -197,6 +200,12 @@ def van_der_pauw_calculation(resistances: List[float]) -> float:
     return sheet_resistance
 
 
+def task_status_web() -> None:
+    """This function shall be executed within a st container"""
+
+    pass
+
+
 def init_4w_vdp() -> None:
     """
     Registers the four-wire Van der Pauw measurement task.
@@ -209,6 +218,7 @@ def init_4w_vdp() -> None:
         description="Four-wire measurement using Keithley 2000 for temperature and NV34420 for voltage and SM2401 for current.",
         instrs_aliases=["model 2000", "relay matrix", "model 2401", "34420"],
         function=meas_4w_vdp,
+        custom_web_status=task_status_web,
     )
     tasks_obj = Tasks()
     tasks_obj.add_task(new_task)

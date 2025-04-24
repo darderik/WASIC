@@ -64,6 +64,8 @@ class Task:
 
     def _save_chart_data(self) -> None:
         """Saves collected chart data to files."""
+        if self.custom_alias == "":
+            return
         for chart in self.data:
             try:
                 file_name = f"{chart.name}_{self.custom_alias}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"

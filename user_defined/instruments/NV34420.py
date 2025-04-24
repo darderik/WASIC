@@ -55,7 +55,7 @@ class NV34420(Instrument):
             write_termination="\n",
             timeout=5000,
         )
-        self.connect()
+        self.connect(explicit_remote="SYSTEM:REMOTE")
         self.disable_beep()
         self.init_properties()
 
@@ -126,6 +126,12 @@ class NV34420(Instrument):
         """
         self.write(f":SENS:FRES:RANG {value}")
 
+    def disable_beep(self) -> None:
+        self.write("system:beeper:state 0")
+
+    def set_remote(self) -> None:
+        self.write("system:remote")
+
     def measure_voltage(self) -> float:
         """
         Performs a voltage measurement.
@@ -180,6 +186,7 @@ class NV34420(Instrument):
         filter_count : int, optional
             Number of readings for the digital filter averaging.
         """
+        self.write("SENSe:FRESistance:OCOMpensated ON")
         if filter_ON:
             self.write(f":SENS:FRES:FILT:TYPE {filter_type}")
             self.write(f":SENS:FRES:FILT:COUNT {filter_count}")

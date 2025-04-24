@@ -1,4 +1,6 @@
 import threading
+import logging
+
 from threading import Thread, Lock
 import time
 import json
@@ -9,10 +11,10 @@ from serial.tools.list_ports import comports
 from serial.tools.list_ports_common import ListPortInfo
 from instruments import Instrument_Entry, SCPI_Info
 from easy_scpi import Instrument
-from .utilities import detect_baud_rate, validate_response, detect_baud_wrapper
 from config import Config
 from user_defined import custom_instr_handler
-import logging
+from .utilities import detect_baud_wrapper, is_instrument_in_aliases, validate_response
+
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +24,6 @@ class Connections:
     The Connections class manages a collection of instruments connected via serial ports.
     It provides methods to verify the connected instruments, find a specific instrument by name,
     and fetch all instruments based on a list of aliases (that are names or even serial numbers).
-
     Attributes:
         _instrument_lock (threading.Lock): A lock to ensure thread-safe operations on the Instruments list.
         _file_lock (threading.Lock): A lock to ensure thread-safe file operations.
@@ -40,7 +41,7 @@ class Connections:
             cls._config = Config()
         return cls._instance
 
-    def get_instrument(self, alias: str) -> Optional[Instrument_Entry]:
+    def get_instrument(self, keyword: str) -> Optional[Instrument_Entry]:
         """
         Returns an Instrument_Entry object with similiar idn string.
 
@@ -51,12 +52,12 @@ class Connections:
             Optional[Instrument_Entry]: An Instrument_Entry object that matches the alias, or None if no instrument with that alias is found.
         """
         with self._instrument_lock:
-            logger.debug(f"Searching for instrument with alias: {alias}")
+            logger.debug(f"Searching for instrument with keyword: {keyword}")
             for instr in self.instruments_list:
-                if alias.lower() in instr.data.idn.lower():
-                    logger.debug(f"Found instrument with alias: {alias}")
+                if keyword.lower() in instr.data.idn.lower():
+                    logger.debug(f"Found instrument with keyword: {keyword}")
                     return instr
-            logger.warning(f"No instrument found with alias: {alias}")
+            logger.warning(f"No instrument found with keyword: {keyword}")
         return None
 
     def get_instruments_aliases(self, idn: bool = False) -> List[str]:
@@ -124,7 +125,7 @@ class Connections:
                         logger.error(f"Error verifying instrument: {e}")
             self.instruments_list = valid_instruments  # Update the InstrumentsList
 
-    def fetch_all_instruments(self, curAliasesList: List[str]) -> None:
+    def fetch_all_instruments(self, curAliasesList: List[str], clear_list=True) -> None:
         """
         Fetches all instruments based on the provided list of aliases.
 
@@ -137,7 +138,12 @@ class Connections:
             curAliasesList (List[str]): A list of instrument aliases to fetch.
         """
         with self._instrument_lock:
+            if clear_list:
+                for instr in self.instruments_list:
+                    instr.scpi_instrument.disconnect()
+                self.instruments_list = []
             logger.debug(f"Fetching instruments based on aliases: {curAliasesList}")
+            # Grab locked ports in self.instruments_list (no effect if clear list was specified)
             curLockedPorts: List[str] = [
                 instr.scpi_instrument.port for instr in self.instruments_list
             ]
@@ -146,43 +152,36 @@ class Connections:
             available_ports: List[str] = [
                 port.name for port in all_comports if port.name not in curLockedPorts
             ]
+            # Create a list of tuples PORT,IDN,BAUDRATE
             com_idn_baud: List[Tuple[str, str, int]] = []
             com_idn_baud_lock = Lock()
-
-            def safe_detect_baud_wrapper(port):
-                nonlocal com_idn_baud
-                result = detect_baud_wrapper(port, None, timeout)
-                if result is not None:
-                    with com_idn_baud_lock:
-                        com_idn_baud.append(result)
-
             threadsList: List[Thread] = []
             timeout: float = self._config.get("default_timeout", 0.5)
             for port in available_ports:
                 newThread: Thread = Thread(
-                    target=safe_detect_baud_wrapper, args=(port,)
+                    target=detect_baud_wrapper,
+                    args=(port, None, timeout, com_idn_baud, com_idn_baud_lock),
                 )
                 newThread.start()
                 threadsList.append(newThread)
             for thread in threadsList:
                 thread.join()
             logger.debug(f"COM ports, IDN strings, and baud rates: {com_idn_baud}")
-
-            for alias in curAliasesList:
+            # Compare if fetched instruments are in alias
+            for port, idn_string, baud in com_idn_baud:
                 scpi_info: Optional[SCPI_Info] = None
-                for port, idn_string, baud in com_idn_baud:
-                    if alias.lower() in idn_string.lower():
-                        splitted_idn: List[str] = idn_string.split(",")
-                        scpi_info = SCPI_Info(
-                            port=port,
-                            baud_rate=baud,
-                            idn=idn_string,
-                            alias=alias,
-                            name=splitted_idn[0] + " " + splitted_idn[1],
-                        )
-                        logger.debug(f"Found instrument: {alias} -> {scpi_info}")
-                        break
-                if scpi_info is not None:
+                alias: Optional[str] = is_instrument_in_aliases(idn=idn_string)
+                # Check if there is a matching alias
+                if alias is not None:
+                    splitted_idn: List[str] = idn_string.split(",")
+                    scpi_info = SCPI_Info(
+                        port=port,
+                        baud_rate=baud,
+                        idn=idn_string,
+                        alias=alias,
+                        name=splitted_idn[0] + " " + splitted_idn[1],
+                    )
+                    logger.debug(f"Found instrument: {alias} -> {scpi_info}")
                     instrument_entry: Optional[Instrument_Entry] = custom_instr_handler(
                         scpi_info
                     )

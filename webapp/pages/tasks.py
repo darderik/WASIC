@@ -98,7 +98,7 @@ with st.container():
                     on_click=tasks_obj.stop_task,
                     key="stop_task_button",
                     help="Stop the currently running task.",
-                    disabled=custom_alias == "",
+                    # disabled=custom_alias == "",
                 )
         paused = st.checkbox("Pause Data", False)
         plots_pholder_list: List[DeltaGenerator] = []
@@ -114,16 +114,15 @@ with st.container():
                 # Placeholder for the scatter chart
                 scatter_placeholder = st.empty()
                 plots_pholder_list.append(scatter_placeholder)
-                # TODO Shall allow to have multiple scatter. Dynamic array with the same amount of charts as the elements of the curdatalist list
                 # Placeholder for the scatter chart
-                curDataList: List[ChartData] = tasks_obj._is_running.data
-                # Continuously update the chart
-                if not paused:
-                    while tasks_obj._is_running is not None:
-                        for idx, curChartData in enumerate(curDataList):
-                            plot_chart_native(curChartData, plots_pholder_list[idx])
-                        # Pause loop button
-                        time.sleep(2)
-                else:
+            curDataList: List[ChartData] = tasks_obj._is_running.data
+            # Continuously update the chart
+            if not paused:
+                while tasks_obj._is_running is not None:
                     for idx, curChartData in enumerate(curDataList):
-                        plot_chart_plotly(curChartData, plots_pholder_list[idx])
+                        plot_chart_native(curChartData, plots_pholder_list[idx])
+                    # Pause loop button
+                    time.sleep(2)
+            else:
+                for idx, curChartData in enumerate(curDataList):
+                    plot_chart_plotly(curChartData, plots_pholder_list[idx])

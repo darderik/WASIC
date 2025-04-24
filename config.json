@@ -2,7 +2,8 @@
     "instr_aliases": [
         "Raspberry",
         "Model 2000",
-        "Relay Matrix"
+        "Relay Matrix",
+        "34420A"
     ],
     "communication_mode": "pyvisa",
     "instrument_connections_datapath": "data\\instr\\instruments.json",
@@ -13,5 +14,5 @@
         "K2000",
         "RaspberrySIM"
     ],
-    "log_level": "INFO"
+    "log_level": "DEBUG"
 }

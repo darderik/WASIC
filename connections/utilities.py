@@ -24,6 +24,8 @@ import string
 import serial
 from typing import Tuple, List, Optional, Any
 from config import Config
+from time import sleep
+from threading import Lock
 import logging
 
 logger = logging.getLogger(__name__)
@@ -54,6 +56,7 @@ def detect_baud_rate(
     timeout: float = DEFAULT_TIMEOUT,
     scan_all=False,
     print_all=False,
+    sbits=1,
 ) -> Tuple[int, str] | None:
     baudrates = BAUDRATES if scan_all else (9600, 19200, 38400, 57600, 115200, 14400)
     data = (
@@ -61,29 +64,35 @@ def detect_baud_rate(
         if isinstance(data, bytes)
         else data.encode() if data is not None else b"*IDN?\n"
     )
-
-    detected_baud_rate: int = 0
+    detected_baud_rate = 0
     with serial.Serial(port) as ser:
         for baudrate in baudrates:
             logger.debug(f"Trying baudrate: {baudrate} on port {port}")
             ser.baudrate = baudrate
             ser.timeout = timeout
+            ser.stopbits = sbits
+            ser.write(b"syst:rem")  # HP Instruments...
             ser.write(b"\n\n\n\n")  # Flush
-            ser.read(ser.in_waiting)
+            sleep(10e-3)
+            ser.read_all()
             ser.write(data)
+            sleep(10e-3)
             response = ser.read_until(expected=b"\n")
             while ser.in_waiting != 0:
                 _ = ser.read(ser.in_waiting)
 
             if validate_response(response):
-                logger.debug(
-                    f"Detected baudrate: {baudrate} on port {port} with response: {response}"
-                )
                 detected_baud_rate = baudrate
                 current_idn = response.decode().strip()
                 break
     ser.close()
-    return (detected_baud_rate, current_idn) if detected_baud_rate != 0 else None
+    # Recursive call
+    if detected_baud_rate != 0:
+        return (detected_baud_rate, current_idn)
+    elif sbits != 2:  # Wrong stop bits?
+        return detect_baud_rate(port, timeout=timeout, sbits=2)
+    else:
+        return None
 
 
 def validate_response(response: bytes) -> bool:
@@ -94,14 +103,27 @@ def validate_response(response: bytes) -> bool:
         return False
 
 
-def detect_baud_wrapper(port, data, timeout: float) -> Tuple[str, str, int] | None:
+def detect_baud_wrapper(
+    port, data, timeout: float, target: List[Tuple[str, str, int]], target_lock: Lock
+) -> None:
     config = Config()
     BR_IDN: Optional[Tuple[int, str]] = detect_baud_rate(
         port=port, timeout=config.get("default_timeout", 0.5), data=data
     )
     # PORT, IDN, BAUD
     if BR_IDN is not None:
-        return (port, BR_IDN[1], BR_IDN[0])
+        result_tuple: Tuple[str, str, int] = (port, BR_IDN[1], BR_IDN[0])
+        logger.debug(
+            f"BR Detection on port {result_tuple[0]} with Baud {result_tuple[2]} and IDN {result_tuple[1]}"
+        )
+        with target_lock:
+            target.append(result_tuple)
     else:
         logger.debug(f"Failed to detect baud rate for port {port}")
-        return None
+
+
+def is_instrument_in_aliases(idn: str) -> Optional[str]:
+    for alias in Config().get("instr_aliases"):
+        if alias.lower() in idn.lower():
+            return alias
+    return None

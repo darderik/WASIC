@@ -10,15 +10,15 @@ conn_obj = Connections()
 conf_obj = Config()
 
 
-def verify_instruments(mode: int = 0):
+def verify_instruments(mode: int = 0, clear_list: bool = True):
     """Verify or fetch all instruments based on the mode."""
+    aliases = conf_obj.get("instr_aliases")
     if mode == 0:
         conn_obj.verify_instruments()
+    elif clear_list:
+        conn_obj.fetch_all_instruments(curAliasesList=aliases)
     else:
-        for instr in conn_obj.instruments_list:
-            instr.scpi_instrument.disconnect()
-            conn_obj.instruments_list.remove(instr)
-        conn_obj.fetch_all_instruments(conf_obj.get("instr_aliases"))
+        conn_obj.fetch_all_instruments(curAliasesList=aliases, clear_list=False)
     # Update session state with the instruments data
     instr_list: List[Instrument_Entry] = conn_obj.instruments_list
     st.session_state["instr_table"] = pd.DataFrame(
@@ -78,7 +78,7 @@ st.subheader("📋 Connected Instruments")
 st.table(st.session_state["instr_table"])
 
 # Create columns for button alignment
-button_cols = st.columns([1, 1, 1, 1])
+button_cols = st.columns([1, 1, 1, 1, 1])
 
 # Button to refresh the data
 with button_cols[0]:
@@ -92,13 +92,19 @@ with button_cols[1]:
         verify_instruments(mode=1)
         st.success("All instruments fetched successfully!")
 
-# Button to save the configuration
+# Button to fetch only newly connected instruments
 with button_cols[2]:
+    if st.button("🔃 Partial Refresh"):
+        verify_instruments(mode=1, clear_list=False)
+        st.success("New instruments fetched successfully!")
+
+# Button to save the configuration
+with button_cols[3]:
     if st.button("💾 Save Configuration"):
         save_config()
 
 # Button to load the configuration
-with button_cols[3]:
+with button_cols[4]:
     if st.button("📂 Load Configuration"):
         load_config()
 

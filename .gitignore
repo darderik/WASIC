@@ -1,0 +1,4 @@
+*.log
+data/charts/*
+data/charts/backups/*
+data/instruments.json

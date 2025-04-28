@@ -13,12 +13,15 @@ conf_obj = Config()
 def verify_instruments(mode: int = 0, clear_list: bool = True):
     """Verify or fetch all instruments based on the mode."""
     aliases = conf_obj.get("instr_aliases")
-    if mode == 0:
-        conn_obj.verify_instruments()
-    elif clear_list:
-        conn_obj.fetch_all_instruments(curAliasesList=aliases)
-    else:
-        conn_obj.fetch_all_instruments(curAliasesList=aliases, clear_list=False)
+    try:
+        if mode == 0:
+            conn_obj.verify_instruments()
+        elif clear_list:
+            conn_obj.fetch_all_instruments(curAliasesList=aliases)
+        else:
+            conn_obj.fetch_all_instruments(curAliasesList=aliases, clear_list=False)
+    except:
+        st.error("Error while fetching instruments")
     # Update session state with the instruments data
     instr_list: List[Instrument_Entry] = conn_obj.instruments_list
     st.session_state["instr_table"] = pd.DataFrame(

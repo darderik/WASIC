@@ -71,7 +71,7 @@ def detect_baud_rate(
             ser.baudrate = baudrate
             ser.timeout = timeout
             ser.stopbits = sbits
-            ser.write(b"syst:rem")  # HP Instruments...
+            ser.write(b"syst:rem\n")  # HP Instruments...
             ser.write(b"\n\n\n\n")  # Flush
             sleep(10e-3)
             ser.read_all()

@@ -9,6 +9,9 @@ import json
 import datetime
 import os
 import logging
+import time
+import copy
+import atexit
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +48,11 @@ class Task:
         if self.thread_handle is None or not self.thread_handle.is_alive():
             self.exit_flag.clear()
             self.thread_handle = Thread(
-                target=self.function, args=(self.data, self.exit_flag), daemon=True
+                target=self.function, args=(self.data, self.exit_flag)
             )
             self.thread_handle.start()
+            self.bkp_thread = Thread(target=self.backup_saver)
+            self.bkp_thread.start()
             logger.info(f"Task {self.name} started.")
         else:
             logger.warning(f"Task {self.name} is already running.")
@@ -59,39 +64,63 @@ class Task:
             self.thread_handle.join()
             self.thread_handle = None
             logger.info(f"Task {self.name} stopped.")
-            self._save_chart_data()
+        self._save_chart_data()
         self.data.clear()
+
+    def write_chart_to_json(self, chart: ChartData, file_path: str):
+        try:
+            with open(file_path, mode="w") as file:
+                json.dump(
+                    {
+                        "x": chart.x,
+                        "y": chart.y,
+                        "raw_x": chart.raw_x,
+                        "raw_y": chart.raw_y,
+                        "x_label": chart.x_label,
+                        "y_label": chart.y_label,
+                        "info": chart.info,
+                        "custom_name": chart.custom_name,
+                    },
+                    file,
+                    skipkeys=True,
+                    ensure_ascii=False,
+                    indent=4,
+                )
+            logger.info(f"Chart data saved to {file_path}.")
+        except Exception as e:
+            logger.error(f"Failed to save chart data for {chart.name}: {e}")
 
     def _save_chart_data(self) -> None:
         """Saves collected chart data to files."""
         if self.custom_alias == "":
-            return
+            self.custom_alias = "anonymous"
         for chart in self.data:
-            try:
-                file_name = f"{chart.name}_{self.custom_alias}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"
-                file_path = os.path.join(
-                    self._config.get("data_charts_path"), file_name
+            file_name = f"{chart.name}_{self.custom_alias}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"
+            file_path = os.path.join(self._config.get("data_charts_path"), file_name)
+            self.write_chart_to_json(chart, file_path)
+
+    def backup_saver(self):
+        # Flag check
+        if not Config().get("backup_switch", False):
+            return
+        date: str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        sleep_time: float = Config().get("backup_schedule")
+        root_path = os.path.join(
+            self._config.get("data_charts_path"),
+            self._config.get("data_charts_relative_bkps"),
+        )
+        postfix: str = f"{date}.json"
+        while not self.exit_flag.is_set():
+            local_data = copy.copy(self.data)
+            for chart in local_data:
+                # Set a backup name
+                backup_file_name: str = f"BKP_{chart.name}_{postfix}"
+                full_path = os.path.join(
+                    root_path,
+                    backup_file_name,
                 )
-                with open(file_path, mode="w") as file:
-                    json.dump(
-                        {
-                            "x": chart.x,
-                            "y": chart.y,
-                            "raw_x": chart.raw_x,
-                            "raw_y": chart.raw_y,
-                            "x_label": chart.x_label,
-                            "y_label": chart.y_label,
-                            "info": chart.info,
-                            "custom_name": chart.custom_name,
-                        },
-                        file,
-                        skipkeys=True,
-                        ensure_ascii=False,
-                        indent=4,
-                    )
-                logger.info(f"Chart data saved to {file_path}.")
-            except Exception as e:
-                logger.error(f"Failed to save chart data for {chart.name}: {e}")
+                self.write_chart_to_json(chart, full_path)
+            time.sleep(sleep_time)
 
     def has_instruments(self) -> bool:
         """Checks if all associated instruments are available."""
@@ -108,16 +137,22 @@ class Tasks:
 
     _instance = None
     _lock = Lock()  # Add a lock for thread safety
+    _atexit_register = None
 
     def __new__(cls):
         with cls._lock:  # Ensure thread-safe singleton creation
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
-                cls._tasks_list: List[Task] = []
-                cls._is_running: Optional[Task] = None
-                cls._tasks_init_list: List[Callable[[], None]] = []
-                logger.info("Tasks manager instance created.")
         return cls._instance
+
+    def __init__(self):
+        if not hasattr(self, "_initialized"):
+            self._initialized = True
+            self._tasks_list: List[Task] = []
+            self._is_running: Optional[Task] = None
+            self._tasks_init_list: List[Callable[[], None]] = []
+            atexit.register(self.stop_task)
+            logger.info("Tasks manager instance created.")
 
     def add_init_task(self, task: Callable[[], None]) -> None:
         """Adds and initializes a task."""

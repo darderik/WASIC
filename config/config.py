@@ -85,6 +85,8 @@ class Config:
             - instruments_extensions (List[Any]): List of instrument extensions.
             - init_properties_types (List[str]): List of instrument class names to display properties.
         """
+        if default is None:
+            default = default_config.get(key, None)
         return_val = self._data.get(key, default)
         if key not in self._data:
             logger.warning(

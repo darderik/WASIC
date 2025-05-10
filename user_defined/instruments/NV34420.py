@@ -3,6 +3,7 @@ from instruments import SCPI_Info, property_info
 from typing import List
 from easy_scpi import Property as Scpi_Property
 from config import Config
+from pyvisa.constants import StopBits
 
 
 class NV34420(Instrument):
@@ -53,6 +54,7 @@ class NV34420(Instrument):
             baud_rate=curBaudRate,
             read_termination="\n",
             write_termination="\n",
+            stop_bits=StopBits.two,
             timeout=5000,
         )
         self.connect(explicit_remote="SYSTEM:REMOTE")

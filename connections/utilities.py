@@ -66,12 +66,14 @@ def detect_baud_rate(
     )
     detected_baud_rate = 0
     with serial.Serial(port) as ser:
+        ser.timeout = timeout
+        ser.stopbits = sbits
         for baudrate in baudrates:
-            logger.debug(f"Trying baudrate: {baudrate} on port {port}")
+            logger.debug(
+                f"Trying baudrate: {baudrate} on port {port} with sbits {sbits}"
+            )
             ser.baudrate = baudrate
-            ser.timeout = timeout
-            ser.stopbits = sbits
-            ser.write(b"syst:rem\n")  # HP Instruments...
+            ser.write(b"syst:rem\n")  # Explicitly switch in remote
             ser.write(b"\n\n\n\n")  # Flush
             sleep(10e-3)
             ser.read_all()
@@ -104,11 +106,13 @@ def validate_response(response: bytes) -> bool:
 
 
 def detect_baud_wrapper(
-    port, data, timeout: float, target: List[Tuple[str, str, int]], target_lock: Lock
+    port,
+    target: List[Tuple[str, str, int]],
+    target_lock: Lock,
 ) -> None:
     config = Config()
     BR_IDN: Optional[Tuple[int, str]] = detect_baud_rate(
-        port=port, timeout=config.get("default_timeout", 0.5), data=data
+        port=port, timeout=config.get("default_timeout", 0.5)
     )
     # PORT, IDN, BAUD
     if BR_IDN is not None:

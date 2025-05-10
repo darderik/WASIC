@@ -10,6 +10,14 @@ conn_obj = Connections()
 conf_obj = Config()
 
 
+def baud_or_usb(instr: Instrument_Entry) -> str:
+    """Return the baud rate or USBMTC resource string."""
+    if instr.data.baud_rate != 0:
+        return f"{instr.data.baud_rate}"
+    else:
+        return f"USBMTC Resource: {instr.data.port}"
+
+
 def verify_instruments(mode: int = 0, clear_list: bool = True):
     """Verify or fetch all instruments based on the mode."""
     aliases = conf_obj.get("instr_aliases")
@@ -28,11 +36,8 @@ def verify_instruments(mode: int = 0, clear_list: bool = True):
         {
             "Instrument Name": [instr.data.name for instr in instr_list],
             "COM PORT": [instr.scpi_instrument.port for instr in instr_list],
-            "BAUD RATE": [
-                instr.scpi_instrument.resource_params["baud_rate"]
-                for instr in instr_list
-            ],
-            "IDN": [instr.scpi_instrument.id for instr in instr_list],
+            "BAUD RATE": [baud_or_usb(instr) for instr in instr_list],
+            "IDN": [instr.data.idn for instr in instr_list],
         }
     )
     st.rerun()  # Hack to refresh the page

@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 from tasks import ChartData
-from webapp import plot_chart_native, plot_chart_plotly
+from webapp import make_plotly_figure
 
 st.title("📊 Charts Selector")
 
@@ -57,7 +57,8 @@ with st.container():
             chart_data_dict = json.load(cur_file)
             chart_data: ChartData = ChartData(**chart_data_dict)
 
-        st.markdown(f"**Chart Title:** {chart_data.name}")
-        placeholder = st.empty()
-        plot_chart_plotly(chart_data, placeholder)
-        st.divider()
+            fig = make_plotly_figure(chart_data)
+            st.empty().plotly_chart(
+                fig,
+                use_container_width=True,
+            )

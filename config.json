@@ -3,7 +3,8 @@
         "Raspberry",
         "Model 2000",
         "Relay Matrix",
-        "34420A"
+        "34420A",
+        "TDS 2012"
     ],
     "communication_mode": "pyvisa",
     "instrument_connections_datapath": "data\\instr\\instruments.json",
@@ -17,5 +18,6 @@
         "K2000",
         "RaspberrySIM"
     ],
-    "log_level": "DEBUG"
+    "log_level": "DEBUG",
+    "custom_backend" : "C:\\Windows\\System32\\visa64.dll" 
 }

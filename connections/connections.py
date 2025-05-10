@@ -6,15 +6,13 @@ import time
 import json
 from typing import List, Optional, Any, Tuple, Dict
 from dataclasses import asdict
-from serial import Serial
 from serial.tools.list_ports import comports
-from serial.tools.list_ports_common import ListPortInfo
 from instruments import Instrument_Entry, SCPI_Info
 from easy_scpi import Instrument
 from config import Config
 from user_defined import custom_instr_handler
-from .utilities import detect_baud_wrapper, is_instrument_in_aliases, validate_response
-
+from .utilities import detect_baud_wrapper, is_instrument_in_aliases
+import pyvisa as visa
 
 logger = logging.getLogger(__name__)
 
@@ -94,104 +92,160 @@ class Connections:
         Verifies the connected instruments based on the configured communication mode.
         """
         with self._instrument_lock:
-            comm_mode: str = self._config.get("communication_mode", "pyvisa").lower()
             valid_instruments = []
-            if comm_mode == "pyvisa":
-                for instr in self.instruments_list:
-                    try:
-                        _ = instr.scpi_instrument.id  # Attempt to retrieve ID
-                        valid_instruments.append(instr)  # Instrument is valid
-                    except RuntimeError as rt:
-                        logger.warning(
-                            f"Failed to verify instrument: {instr.data.idn} -> {rt}"
-                        )
-                        instr.scpi_instrument.disconnect()  # Free up COM port lock
-            elif comm_mode == "serial":
-                for instr in self.instruments_list:
-                    try:
-                        timeout: float = self._config.get("default_timeout", 0.5)
-                        instr.com_obj.open()
-                        try:
-                            instr.com_obj.write(b"*IDN?\n")  # Send identification query
-                            time.sleep(timeout)
-                            response: str = instr.com_obj.read(
-                                instr.com_obj.in_waiting
-                            ).decode()
-                            if validate_response(response.encode()):
-                                valid_instruments.append(instr)  # Instrument is valid
-                        finally:
-                            instr.com_obj.close()
-                    except Exception as e:
-                        logger.error(f"Error verifying instrument: {e}")
+            for instr in self.instruments_list:
+                try:
+                    _ = instr.scpi_instrument.id  # Attempt to retrieve ID
+                    valid_instruments.append(instr)  # Instrument is valid
+                except RuntimeError as rt:
+                    logger.warning(
+                        f"Failed to verify instrument: {instr.data.idn} -> {rt}"
+                    )
+                    instr.scpi_instrument.disconnect()  # Free up COM port lock
             self.instruments_list = valid_instruments  # Update the InstrumentsList
 
-    def fetch_all_instruments(self, curAliasesList: List[str], clear_list=True) -> None:
+    def fetch_all_instruments(
+        self,
+        curAliasesList: Optional[List[str]] = None,
+        clear_list: bool = True,
+        visa_dll_path: str = Config().get("custom_backend", ""),
+    ) -> None:
         """
-        Fetches all instruments based on the provided list of aliases.
-
-        This method iterates over the provided list of instrument aliases,
-        iterates over all available ports with their baud rates, and when a
-        matching identification string is found, creates an Instrument_Entry instance
-        using custom_instr_handler and appends it to the InstrumentsList.
+        Fetches all instruments based on the provided list of aliases, including USB instruments.
 
         Args:
             curAliasesList (List[str]): A list of instrument aliases to fetch.
+            clear_list (bool): Whether to clear the current instruments list before fetching.
+            visa_dll_path (str): Path to the VISA DLL for the resource manager.
         """
+        curAliasesList = curAliasesList or self._config.get("instr_aliases")
         with self._instrument_lock:
             if clear_list:
-                for instr in self.instruments_list:
-                    instr.scpi_instrument.disconnect()
-                self.instruments_list = []
+                self._clear_instruments()
+
             logger.debug(f"Fetching instruments based on aliases: {curAliasesList}")
-            # Grab locked ports in self.instruments_list (no effect if clear list was specified)
-            curLockedPorts: List[str] = [
-                instr.scpi_instrument.port for instr in self.instruments_list
-            ]
-            logger.debug(f"Locked ports: {curLockedPorts}")
-            all_comports: List[ListPortInfo] = comports()
-            available_ports: List[str] = [
-                port.name for port in all_comports if port.name not in curLockedPorts
-            ]
-            # Create a list of tuples PORT,IDN,BAUDRATE
-            com_idn_baud: List[Tuple[str, str, int]] = []
-            com_idn_baud_lock = Lock()
-            threadsList: List[Thread] = []
-            timeout: float = self._config.get("default_timeout", 0.5)
-            for port in available_ports:
-                newThread: Thread = Thread(
-                    target=detect_baud_wrapper,
-                    args=(port, None, timeout, com_idn_baud, com_idn_baud_lock),
+            curLockedPorts = self._get_locked_ports()
+            available_ports = self._get_available_ports(curLockedPorts)
+            self._fetch_usb_instruments(curLockedPorts, visa_dll_path)
+
+            com_idn_baud = self._fetch_com_instruments(available_ports)
+            self._process_com_instruments(com_idn_baud)
+
+    def _clear_instruments(self) -> None:
+        """Disconnects and clears the current instruments list."""
+        for instr in self.instruments_list:
+            try:
+                instr.scpi_instrument.disconnect()
+                self.instruments_list.remove(instr)
+            except Exception as e:
+                logger.error(
+                    f"Failed to disconnect instrument: {instr.data.idn} -> {e}"
                 )
-                newThread.start()
-                threadsList.append(newThread)
-            for thread in threadsList:
-                thread.join()
-            logger.debug(f"COM ports, IDN strings, and baud rates: {com_idn_baud}")
-            # Compare if fetched instruments are in alias
-            for port, idn_string, baud in com_idn_baud:
-                scpi_info: Optional[SCPI_Info] = None
-                alias: Optional[str] = is_instrument_in_aliases(idn=idn_string)
-                # Check if there is a matching alias
-                if alias is not None:
-                    splitted_idn: List[str] = idn_string.split(",")
-                    scpi_info = SCPI_Info(
-                        port=port,
-                        baud_rate=baud,
-                        idn=idn_string,
-                        alias=alias,
-                        name=splitted_idn[0] + " " + splitted_idn[1],
-                    )
-                    logger.debug(f"Found instrument: {alias} -> {scpi_info}")
-                    instrument_entry: Optional[Instrument_Entry] = custom_instr_handler(
-                        scpi_info
-                    )
-                    if instrument_entry is not None:
-                        self.instruments_list.append(instrument_entry)
-                        curLockedPorts.append(scpi_info.port)
-                    else:
-                        logger.error(
-                            f"Failed to create Instrument_Entry for instrument: {scpi_info.idn}"
-                        )
+
+    def _get_locked_ports(self) -> List[str]:
+        """Returns a list of ports currently locked by instruments."""
+        return [instr.scpi_instrument.port for instr in self.instruments_list]
+
+    def _get_available_ports(self, locked_ports: List[str]) -> List[str]:
+        """Returns a list of available COM ports."""
+        all_comports = comports()
+        return [port.name for port in all_comports if port.name not in locked_ports]
+
+    def _fetch_com_instruments(
+        self, available_ports: List[str]
+    ) -> List[Tuple[str, str, int]]:
+        """Fetches instruments connected via COM ports."""
+        com_idn_baud: List[Tuple[str, str, int]] = []
+        com_idn_baud_lock = Lock()
+        threads = []
+
+        for port in available_ports:
+            thread = Thread(
+                target=detect_baud_wrapper,
+                args=(port, com_idn_baud, com_idn_baud_lock),
+            )
+            thread.start()
+            threads.append(thread)
+
+        for thread in threads:
+            thread.join()
+
+        logger.debug(f"COM ports, IDN strings, and baud rates: {com_idn_baud}")
+        return com_idn_baud
+
+    def _fetch_usb_instruments(
+        self, locked_ports: List[str], visa_dll_path: str
+    ) -> None:
+        """Fetches instruments connected via USB using the VISA resource manager."""
+        try:
+            resource_manager = (
+                visa.ResourceManager(visa_dll_path)
+                if visa_dll_path
+                else visa.ResourceManager()
+            )
+            all_usb_instruments = resource_manager.list_resources()
+            logger.debug(f"USB instruments found: {all_usb_instruments}")
+
+            for usb_instr in (
+                x
+                for x in all_usb_instruments
+                if x not in locked_ports and "ASRL" not in x
+            ):
+                self._process_usb_instrument(usb_instr)
+
+        except Exception as e:
+            logger.error(f"Failed to initialize VISA resource manager: {e}")
+
+    def _process_usb_instrument(self, usb_instr: str) -> None:
+        """Processes a single USB instrument."""
+        try:
+            cur_instr = Instrument(port=usb_instr)
+            cur_instr.connect()
+            id_str = cur_instr.id
+            alias = is_instrument_in_aliases(idn=id_str)
+            cur_instr.disconnect()
+
+            if alias:
+                splitted_idn = id_str.split(",")
+                scpi_info = SCPI_Info(
+                    port=usb_instr,
+                    baud_rate=0,
+                    idn=id_str,
+                    alias=alias,
+                    name=f"{splitted_idn[0]} {splitted_idn[1]}",
+                )
+                self._add_instrument(scpi_info)
+        except Exception as e:
+            logger.error(f"Failed to create instrument for USB: {usb_instr} -> {e}")
+
+    def _process_com_instruments(
+        self, com_idn_baud: List[Tuple[str, str, int]]
+    ) -> None:
+        """Processes instruments connected via COM ports."""
+        for port, idn_string, baud in com_idn_baud:
+            alias = is_instrument_in_aliases(idn=idn_string)
+            if alias:
+                splitted_idn = idn_string.split(",")
+                scpi_info = SCPI_Info(
+                    port=port,
+                    baud_rate=baud,
+                    idn=idn_string,
+                    alias=alias,
+                    name=f"{splitted_idn[0]} {splitted_idn[1]}",
+                )
+                logger.debug(f"Found instrument: {alias} -> {scpi_info}")
+                self._add_instrument(scpi_info)
+
+    def _add_instrument(self, scpi_info: SCPI_Info) -> None:
+        """Adds an instrument to the instruments list."""
+        instrument_entry = custom_instr_handler(scpi_info)
+        if instrument_entry:
+            self.instruments_list.append(instrument_entry)
+            logger.info(f"Successfully added instrument: {scpi_info.idn}")
+        else:
+            logger.error(
+                f"Failed to create Instrument_Entry for instrument: {scpi_info.idn}"
+            )
 
     def save_config(self) -> None:
         """

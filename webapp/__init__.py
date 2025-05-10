@@ -1,1 +1,3 @@
-from .web_utilities import plot_chart_native, plot_chart_plotly
+from .web_utilities import (
+    make_plotly_figure,
+)

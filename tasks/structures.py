@@ -33,3 +33,4 @@ class ChartData:
     x_label: str = "X-axis"
     y_label: str = "Y-axis"
     custom_name: str = ""
+    custom_type: str = ""

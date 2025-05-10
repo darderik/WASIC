@@ -57,13 +57,18 @@ class Task:
         else:
             logger.warning(f"Task {self.name} is already running.")
 
+    def check(self) -> None:
+        if self.exit_flag.is_set():
+            logger.info(f"Task {self.name} has been signaled to stop.")
+            self.stop()
+
     def stop(self) -> None:
         """Signals the task to stop and waits for the thread to finish."""
         if self.thread_handle and self.thread_handle.is_alive():
             self.exit_flag.set()
             self.thread_handle.join()
-            self.thread_handle = None
             logger.info(f"Task {self.name} stopped.")
+        self.thread_handle = None
         self._save_chart_data()
         self.data.clear()
 
@@ -200,6 +205,12 @@ class Tasks:
                 self._is_running.stop()
                 self._is_running = None
                 logger.info("Task stopped.")
+
+    def check(self) -> None:
+
+        if self._is_running is not None and self._is_running.exit_flag.is_set():
+            self._is_running.check()
+            self._is_running = None
 
     def add_task(self, task: Task) -> None:
         """Adds a new task to the task list."""

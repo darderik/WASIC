@@ -17,11 +17,8 @@ def check_init_properties(scpi_obj: SCPI_Instrument) -> bool:
 
 def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
     instr_extensions: List[tuple[str, type]] = config.get("instruments_extensions", [])
-    newSCPI: SCPI_Instrument = None
+    newSCPI: Optional[SCPI_Instrument] = None
     curInstrumentWrapper: Optional[Instrument_Entry] = None
-    # Serial auxiliar object
-    newComObj: Serial = Serial(scpi_info.port, scpi_info.baud_rate)  # TODO timeout?
-    newComObj.close()
 
     # Fetch from config singleton
     for instr_ext in instr_extensions:
@@ -37,16 +34,12 @@ def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
             baud_rate=scpi_info.baud_rate,
         )
 
-    if newSCPI is not None and newComObj is not None:
-        if config.get("communication_mode", "pyvisa") == "pyvisa":
-            if not newSCPI.connected:
-                newSCPI.connect()
-            # Lock the instrument resource
-            curInstrumentWrapper = Instrument_Entry(
-                data=scpi_info,
-                scpi_instrument=newSCPI,
-            )
-        elif config.get("communication_mode") == "serial":
-            curInstrumentWrapper = Instrument_Entry(data=scpi_info, com_obj=newComObj)
-
+    if newSCPI is not None:
+        if not newSCPI.connected:
+            newSCPI.connect()
+        # Lock the instrument resource
+        curInstrumentWrapper = Instrument_Entry(
+            data=scpi_info,
+            scpi_instrument=newSCPI,
+        )
     return curInstrumentWrapper

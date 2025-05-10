@@ -4,6 +4,10 @@ from serial import Serial
 from config import Config
 import time
 from typing import Optional
+import pyvisa as visa
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -33,47 +37,25 @@ class SCPI_Info:
 @dataclass
 class Instrument_Entry:
     data: SCPI_Info
-    com_obj: Serial = None
     scpi_instrument: SCPI_Instrument = None
     _config: Config = Config()
 
     def write_wrapper(self, command: str) -> None:
-        if self._config.get("communication_mode", "pyvisa") == "pyvisa":
-            self.scpi_instrument.write(command)
-        else:
-            if not self.com_obj.is_open:
-                self.com_obj.open()
-                self.com_obj.write(command.encode())
-            else:
-                raise Exception(RuntimeError("Serial port is already open."))
+        self.scpi_instrument.write(command)
 
     def read_wrapper(self) -> str:
         # The CLS handling should be implemented in the children classes
         # Refer to test_instrument example
-        toReturn: str = ""
-        if self._config.get("communication_mode", "pyvisa") == "pyvisa":
+        try:
             toReturn = self.scpi_instrument.read()
-        else:
-            if not self.com_obj.is_open:
-                self.com_obj.open()
-                time.sleep(self._config.get("default_timeout"))
-                toReturn = self.com_obj.read_all().decode()
-            else:
-                raise Exception(RuntimeError("Serial port is already open."))
+        except visa.errors.VisaIOError as e:
+            logger.error(f"VisaIOError occurred: {e}")
+            raise
         return toReturn
 
     def query_wrapper(self, command) -> str:
         # The CLS handling should be implemented in the children classes
         # Refer to test_instrument example
         toReturn: str = ""
-        if self._config.get("communication_mode", "pyvisa") == "pyvisa":
-            toReturn = self.scpi_instrument.query(command)
-        else:
-            if not self.com_obj.is_open:
-                self.com_obj.open()
-                time.sleep(self._config.get("default_timeout", 0.5))
-                self.com_obj.write(command.encode())
-                toReturn = self.com_obj.read_all().decode()
-            else:
-                raise Exception(RuntimeError("Serial port is already open."))
+        toReturn = self.scpi_instrument.query(command)
         return toReturn

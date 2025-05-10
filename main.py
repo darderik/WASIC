@@ -3,9 +3,12 @@ import streamlit.web.bootstrap
 import logging
 from config import Config
 from tasks import Tasks
+from connections import Connections
 
 # Import for forcing initialization of tasks
 from user_defined.tasks import *
+import threading
+from test import test_function
 
 
 def main():
@@ -30,6 +33,11 @@ def main():
     # Streamlit boot
     script_path = os.path.abspath("streamlit_app.py")
     logging.basicConfig(level="INFO")
+    # New thread test function
+    # Create and start a new thread to run test_function
+    test_thread = threading.Thread(target=test_function, daemon=True)
+    test_thread.start()
+
     streamlit.web.bootstrap.run(script_path, False, [], {})
 
 

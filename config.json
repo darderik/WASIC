@@ -4,7 +4,8 @@
         "Model 2000",
         "Relay Matrix",
         "34420A",
-        "TDS 2012"
+        "TDS 2012",
+        "TBS1052C"
     ],
     "communication_mode": "pyvisa",
     "instrument_connections_datapath": "data\\instr\\instruments.json",
@@ -16,7 +17,8 @@
     "init_properties_types": [
         "NV34420",
         "K2000",
-        "RaspberrySIM"
+        "RaspberrySIM",
+        "TBS1052C"
     ],
     "log_level": "DEBUG",
     "custom_backend" : "C:\\Windows\\System32\\visa64.dll" 

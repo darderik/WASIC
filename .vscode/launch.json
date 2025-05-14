@@ -5,12 +5,20 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Project",
+            "name": "Python Debugger: WASIC",
             "type": "debugpy",
             "request": "launch",
             "program": "main.py",
             "console": "integratedTerminal",
             "justMyCode": false
-        }
+        },
+        {
+            "name": "Python Debugger: Test WASIC (No ST)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "wasic_test.py",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
     ]
 }

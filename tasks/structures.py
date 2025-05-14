@@ -34,3 +34,6 @@ class ChartData:
     y_label: str = "Y-axis"
     custom_name: str = ""
     custom_type: str = ""
+    pop_raw: bool = False
+    sample_points_x: int = 0
+    sample_points_y: int = 0

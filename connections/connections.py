@@ -10,7 +10,7 @@ from serial.tools.list_ports import comports
 from instruments import Instrument_Entry, SCPI_Info
 from easy_scpi import Instrument
 from config import Config
-from user_defined import custom_instr_handler
+from addons import custom_instr_handler
 from .utilities import detect_baud_wrapper, is_instrument_in_aliases
 import pyvisa as visa
 

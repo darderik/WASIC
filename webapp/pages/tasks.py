@@ -116,32 +116,42 @@ if is_task_running and tasks_obj._is_running is not None:
                 help="Stop the currently running task.",
                 # disabled=custom_alias == "",
             )
-    paused = st.checkbox("Pause Data", False)
     # Custom GUI if specified in the task object
     #   with st.container():
     # Display Data Visualization
+
     with st.expander("📊 Data Visualization", expanded=True):
-        curDataList: Optional[List[ChartData]] = Tasks()._is_running.data
-        placeholders: List[DeltaGenerator] = []
-        if tasks_obj._is_running is not None:
-            cur_charts = cur_task.data
-            num_charts = len(cur_charts)
-            for chart in cur_charts:
-                new_empty_placeholder: DeltaGenerator = st.empty()
-                with new_empty_placeholder:
-                    st.title(chart.name)
-                    placeholders.append(new_empty_placeholder)
-            st.markdown("---")
-            if paused:
-                if curDataList is not None:
-                    for idx, curChartData in enumerate(curDataList):
-                        # crei la figura in una funzione
-                        fig = make_plotly_figure(curChartData)
-                        placeholders[idx].plotly_chart(
-                            fig,
-                            use_container_width=True,
+        running_task: Task = tasks_obj._is_running
+        if running_task is not None:
+            curDataList: Optional[List[ChartData]] = running_task.data
+            placeholders: List[DeltaGenerator] = []
+            if tasks_obj._is_running is not None:
+                cur_charts = cur_task.data
+                num_charts = len(cur_charts)
+                for chart in cur_charts:
+                    new_empty_placeholder: DeltaGenerator = st.empty()
+                    with new_empty_placeholder:
+                        st.title(chart.name)
+                        st.text(
+                            f"Current X Y Raw count: {len(chart.raw_x)},{len(chart.raw_y)}"
                         )
-            else:
-                chart_update_frag(
-                    curDataList=curDataList, paused=paused, placeholders=placeholders
-                )
+                        st.text(
+                            f"Current X Y Processed count: {len(chart.x)},{len(chart.y)}"
+                        )
+                        placeholders.append(new_empty_placeholder)
+                st.markdown("---")
+                paused = st.checkbox("Pause Data", False)
+                if paused:
+                    if curDataList is not None:
+                        for idx, curChartData in enumerate(curDataList):
+                            fig = make_plotly_figure(curChartData)
+                            placeholders[idx].plotly_chart(
+                                fig,
+                                use_container_width=True,
+                            )
+                else:
+                    chart_update_frag(
+                        curDataList=curDataList,
+                        paused=paused,
+                        placeholders=placeholders,
+                    )

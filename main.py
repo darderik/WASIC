@@ -6,9 +6,9 @@ from tasks import Tasks
 from connections import Connections
 
 # Import for forcing initialization of tasks
-from user_defined.tasks import *
+from addons.tasks import *
 import threading
-from test import test_function
+from wasic_test import test_function
 
 
 def main():

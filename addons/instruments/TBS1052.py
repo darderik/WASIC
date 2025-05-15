@@ -23,8 +23,6 @@ class TBS1052C(Instrument):
             read_termination="\n",
             write_termination="\n",
             timeout=50000,
-            stop_bits=constants.StopBits.one,
-            parity=constants.Parity.none,
             encoding="latin-1",
         )
         self.connect()
@@ -32,7 +30,6 @@ class TBS1052C(Instrument):
 
         # Disable response headers
         self.write("*RST")
-        self.query("*OPC?")
         self.write("HEADER OFF")
         self.write("ACQUIRE:STATE OFF")
         self.write("*cls")  # clear ESR

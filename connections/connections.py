@@ -181,7 +181,7 @@ class Connections:
             resource_manager = (
                 visa.ResourceManager(visa_dll_path)
                 if visa_dll_path
-                else visa.ResourceManager()
+                else visa.ResourceManager("@py")
             )
             all_usb_instruments = resource_manager.list_resources()
             logger.debug(f"USB instruments found: {all_usb_instruments}")
@@ -199,7 +199,10 @@ class Connections:
     def _process_usb_instrument(self, usb_instr: str) -> None:
         """Processes a single USB instrument."""
         try:
-            cur_instr = Instrument(port=usb_instr)
+            # Always use custom backend for USB instruments (pyvisa-py not supported)
+            cur_instr = Instrument(
+                port=usb_instr, backend=Config().get("custom_backend", "")
+            )
             cur_instr.connect()
             id_str = cur_instr.id
             alias = is_instrument_in_aliases(idn=id_str)

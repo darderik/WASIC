@@ -30,7 +30,7 @@ class RelayMatrix(Instrument):
         Retrieves the device identification and firmware version.
     """
 
-    def __init__(self, scpi_info: SCPI_Info) -> None:
+    def __init__(self, scpi_info: SCPI_Info,backend="@py", **kwargs) -> None:
         """
         Initializes the RelayMatrix object with the specified SCPI parameters.
 
@@ -48,6 +48,7 @@ class RelayMatrix(Instrument):
             handshake=True,
             write_termination="\n",
             read_termination="\n",
+            backend=backend
         )
         self.properties_list: List[property_info] = []  # No properties
 

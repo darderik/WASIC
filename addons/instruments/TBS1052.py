@@ -13,17 +13,21 @@ from config import Config
 class TBS1052C(Instrument):
     """Driver for Tektronix TBS1052C oscilloscopes, using full SCPI command names."""
 
-    def __init__(self, scpi_info: SCPI_Info):
+    def __init__(
+        self,
+        scpi_info: SCPI_Info,
+        backend: str = Config().get("custom_backend", ""),
+        **kwargs,
+    ):
         # Always use the VISA/USB backend for this model
         super().__init__(
-            backend=(
-                Config().get("custom_backend", "") if scpi_info.baud_rate == 0 else None
-            ),
+            backend=backend,
             port=scpi_info.port,
             read_termination="\n",
             write_termination="\n",
             timeout=50000,
             encoding="latin-1",
+            **kwargs,
         )
         self.connect()
         self.__childlock = threading.RLock()
@@ -33,7 +37,7 @@ class TBS1052C(Instrument):
         self.write("HEADER OFF")
         self.write("ACQUIRE:STATE OFF")
         self.write("*cls")  # clear ESR
-        self.write("*OPC?")
+        self.query("*OPC?")
         # Overridden methods
 
     def initialize_waveform_settings(

@@ -40,7 +40,7 @@ class SM2401(Instrument):
         Turns off the output.
     """
 
-    def __init__(self, scpi_info: SCPI_Info) -> None:
+    def __init__(self, scpi_info: SCPI_Info,**kwargs) -> None:
         """
         Initializes the SM2401 object with the specified SCPI parameters.
 
@@ -55,6 +55,7 @@ class SM2401(Instrument):
             read_termination="\n",
             write_termination="\n",
             timeout=5000,
+            **kwargs,
         )
         self.connect()
         # (Optional) Perform any initial configuration, e.g., disable beeps

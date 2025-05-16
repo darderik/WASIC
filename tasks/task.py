@@ -192,6 +192,8 @@ class Tasks:
                         task.start()
                         self._is_running = task
                         break
+                else:
+                    logger.warning(f"Task {name} not found or has no instruments.")
             else:
                 logger.warning(
                     f"A task is already running ({self._is_running.name}). "

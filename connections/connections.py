@@ -1,6 +1,6 @@
+from os import read
 import threading
 import logging
-
 from threading import Thread, Lock
 import time
 import json
@@ -32,11 +32,13 @@ class Connections:
     _file_lock = threading.Lock()
     _instance = None
     instruments_list: List[Instrument_Entry] = []
+    backend: str = ""
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super(Connections, cls).__new__(cls, *args, **kwargs)
             cls._config = Config()
+            cls._instance.backend = "@py"
         return cls._instance
 
     def get_instrument(self, keyword: str) -> Optional[Instrument_Entry]:
@@ -185,7 +187,6 @@ class Connections:
             )
             all_usb_instruments = resource_manager.list_resources()
             logger.debug(f"USB instruments found: {all_usb_instruments}")
-
             for usb_instr in (
                 x
                 for x in all_usb_instruments
@@ -201,14 +202,20 @@ class Connections:
         try:
             # Always use custom backend for USB instruments (pyvisa-py not supported)
             cur_instr = Instrument(
-                port=usb_instr, backend=Config().get("custom_backend", "")
+                port=usb_instr,
+                backend=Config().get("custom_backend", ""),
+                write_terminator="\n",
+                read_terminator="\n",
             )
             cur_instr.connect()
             id_str = cur_instr.id
             alias = is_instrument_in_aliases(idn=id_str)
-            cur_instr.disconnect()
-
+            del cur_instr
             if alias:
+                # Force backend to custom backend for USB instruments (globally)
+                if self.backend == "@py" or self.backend == "":
+                    # Use custom backend for USB instruments
+                    self.backend = Config().get("custom_backend", "")
                 splitted_idn = id_str.split(",")
                 scpi_info = SCPI_Info(
                     port=usb_instr,

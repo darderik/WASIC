@@ -64,11 +64,6 @@ def rm_transient(data: List[ChartData], exit_flag: Event) -> None:
     scope.initialize_waveform_settings(
         points=points,
     )
-
-    # Sync with WAI and OPC
-    scope.wait()
-    scope.opc()
-
     # Reset and ground (A1)
     relay_matrix.switch_commute_reset_all()
     relay_matrix.switch_commute_exclusive("a1")
@@ -79,18 +74,15 @@ def rm_transient(data: List[ChartData], exit_flag: Event) -> None:
             # Set 25us for rise sequence
             scope.time_scale = 25e-6
             relay_matrix.opc()
-            scope.opc()
 
             scope.single()
             # NCS trigger
             relay_matrix.switch_commute_exclusive("a2")
             relay_matrix.opc()
             scope.wait()
-            scope.opc()
             t_rise, V_rise = scope.get_waveform(points=points)
             scope.acquire_toggle(False)
             scope.wait()
-            scope.opc()
             # Set 1ms for fall sequence
             scope.time_scale = 1e-3
             scope.horizontal_position(2.3e-3)
@@ -101,7 +93,6 @@ def rm_transient(data: List[ChartData], exit_flag: Event) -> None:
             relay_matrix.switch_commute_exclusive("a1")
             relay_matrix.opc()
             scope.wait()
-            scope.opc()
             t_fall, V_fall = scope.get_waveform(points=points)
 
             # Data processing
@@ -116,7 +107,6 @@ def rm_transient(data: List[ChartData], exit_flag: Event) -> None:
             transient_fall_chart.raw_y.append([t_fall, V_fall])
             scope.acquire_toggle(False)
             scope.wait()
-            scope.opc()
 
     except Exception as e:
         logger.error(f"Error in task: {e}")

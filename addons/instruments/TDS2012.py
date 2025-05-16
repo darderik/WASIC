@@ -4,7 +4,6 @@ from pyvisa import constants
 import threading
 import numpy as np
 from typing import Union, Sequence
-from .common_utilities import strip_header
 import time
 from typing import List, Tuple, Any
 from config import Config
@@ -13,10 +12,12 @@ delay: float = 0.1  # seconds
 
 
 class TDS2012(Instrument):
-    def __init__(self, scpi_info: SCPI_Info):
+    def __init__(self, scpi_info: SCPI_Info, backend: str = "@py"):
         if scpi_info.baud_rate != 0:
             super().__init__(
+                backend=backend,
                 port=scpi_info.port,
+                baud_rate=scpi_info.baud_rate,
                 read_termination="\n",
                 write_termination="\n",
                 timeout=50000,
@@ -27,31 +28,28 @@ class TDS2012(Instrument):
         else:
             # UsbMTC instrument
             super().__init__(
-                backend=Config().get("custom_backend", ""),
+                port=scpi_info.port,
+                backend=backend,
                 read_termination="\n",
                 write_termination="\n",
                 timeout=50000,
-                stop_bits=constants.StopBits.one,
-                parity=constants.Parity.none,
                 encoding="latin-1",
             )
         self.connect()
-        self.__childlock = threading.RLock()
+        self._childlock = threading.RLock()
 
-        self.write("*RST")
         self.write("HEADer OFF")
         self.write("ACQuire:STATE OFF")
         self.write("*CLS")
-        self.query("*OPC?")
 
     def query(self, msg):
-        with self.__childlock:
-            time.sleep(delay)
+        with self._childlock:
+            time.sleep(0.1)
             return super().query(msg)
 
     def write(self, msg):
-        with self.__childlock:
-            time.sleep(delay)
+        with self._childlock:
+            time.sleep(0.1)
             return super().write(msg)
 
     def initialize_waveform_settings(
@@ -132,7 +130,6 @@ class TDS2012(Instrument):
             float, (preamble["YMULT"], preamble["YOFF"], preamble["YZERO"])
         )
         xinc, xzero = map(float, (preamble["XINCR"], preamble["XZERO"]))
-
         if encoding.lower() == "binary":
             data = self.query_binary_values(
                 "CURVe?", datatype="B", data_points=points, is_big_endian=True
@@ -159,3 +156,19 @@ class TDS2012(Instrument):
 
     def wait(self):
         self.write("*WAI")
+
+
+class TDS2012C(TDS2012):
+    def __init__(self, scpi_info: SCPI_Info, backend: str = "@py"):
+        super().__init__(scpi_info, backend)
+
+    def reset(self):
+        self.write("*RST")
+        self.write("HEADer OFF")
+        self.write("ACQuire:STATE OFF")
+        self.write("*CLS")
+
+
+# Append to register the instrument class with its alias
+Config().add_instrument_extension(("TDS 2012,", TDS2012))
+Config().add_instrument_extension(("TDS 2012C,", TDS2012C))

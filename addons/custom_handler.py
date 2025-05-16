@@ -1,3 +1,4 @@
+from turtle import back
 from typing import Optional, List
 from easy_scpi.scpi_instrument import SCPI_Instrument
 from instruments import Instrument_Entry, SCPI_Info
@@ -26,7 +27,7 @@ def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
     for instr_ext in instr_extensions:
         if instr_ext[0].lower() in scpi_info.idn.lower():
             logger.debug(f"Found extension for {scpi_info.idn}")
-            newSCPI = instr_ext[1](scpi_info=scpi_info, backend=global_backend)
+            newSCPI = instr_ext[1](scpi_info=scpi_info,backend=global_backend)
             break
     # No extension found, use default instrument class
     if newSCPI is None:
@@ -34,7 +35,6 @@ def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
         newSCPI = SCPI_Instrument(
             port=scpi_info.port,
             baud_rate=scpi_info.baud_rate,
-            backend=global_backend,
         )
 
     if newSCPI is not None:

@@ -80,11 +80,11 @@ def rm_transient_2012_C(data: List[ChartData], exit_flag: Event) -> None:
             scope.single()
             # ??
             scope.id
+            scope.wait()
             # NCS trigger
             relay_matrix.switch_commute_exclusive("a2")
             relay_matrix.opc()
             scope.wait()
-            scope.opc()
             t_rise, V_rise = scope.get_waveform(points=points)
             scope.acquire_toggle(False)
             # Set 1ms for fall sequence
@@ -100,7 +100,6 @@ def rm_transient_2012_C(data: List[ChartData], exit_flag: Event) -> None:
             relay_matrix.switch_commute_exclusive("a1")
             relay_matrix.opc()
             scope.wait()
-            scope.opc()
             t_fall, V_fall = scope.get_waveform(points=points)
 
             # Data processing
@@ -114,8 +113,6 @@ def rm_transient_2012_C(data: List[ChartData], exit_flag: Event) -> None:
                 continue
             transient_fall_chart.raw_y.append([t_fall, V_fall])
             scope.acquire_toggle(False)
-    except Exception as e:
-        logger.error(f"Error in task: {e}")
     finally:
         relay_matrix.switch_commute_reset_all()
         exit_flag.set()

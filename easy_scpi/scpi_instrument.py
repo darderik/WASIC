@@ -350,7 +350,8 @@ class SCPI_Instrument:
         return resp
 
     def query(self, msg):
-        return self._query(msg)
+        resp = self._query(msg)
+        return resp
 
     def reset(self):
         """

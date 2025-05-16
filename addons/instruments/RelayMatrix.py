@@ -1,8 +1,10 @@
+from smtplib import bCRLF
 from easy_scpi import Instrument
 from instruments import SCPI_Info, property_info
 from typing import List
 from config import Config
-
+import threading
+import time
 
 class RelayMatrix(Instrument):
     """
@@ -45,19 +47,24 @@ class RelayMatrix(Instrument):
             port=scpi_info.port,
             timeout=5000,
             baud_rate=scpi_info.baud_rate,
-            handshake=True,
+            handshake=False,
             write_termination="\n",
             read_termination="\n",
-            backend=backend
+            encoding="utf-8",
+            backend=backend,
         )
+        self.__child_lock = threading.RLock()
         self.properties_list: List[property_info] = []  # No properties
-
     def opc(self) -> None:
         """
         Waits for the operation to complete.
         """
-        self.query("*OPC?")
-
+        resp=self.query("*OPC?")
+        return resp
+    def query(self, msg):
+        with self.__child_lock:
+            time.sleep(0.1) 
+            return super().query(msg)
     def switch_commute(self, *relays: str) -> None:
         """
         Activates or deactivates one or more relays in the matrix.

@@ -37,20 +37,25 @@ class TDS2012(Instrument):
             )
         self.connect()
         self._childlock = threading.RLock()
-
+        self.reset()
         self.write("HEADer OFF")
         self.write("ACQuire:STATE OFF")
         self.write("*CLS")
+        
 
     def query(self, msg):
         with self._childlock:
             time.sleep(0.1)
-            return super().query(msg)
+            resp= super().query(msg)
+            resp=self.opc()
+            return resp
 
     def write(self, msg):
         with self._childlock:
             time.sleep(0.1)
-            return super().write(msg)
+            wrote = super().write(msg)
+            resp = self.opc()
+            return wrote
 
     def initialize_waveform_settings(
         self,
@@ -92,10 +97,12 @@ class TDS2012(Instrument):
 
     def acquire_toggle(self, state: bool = True):
         self.write("ACQuire:STATE ON" if state else "ACQuire:STATE OFF")
+        self.query("acquire:state?")
 
     def single(self):
         self.write("ACQuire:STOPAfter SEQuence")
         self.write("ACQuire:STATE ON")
+        self.query("ACQUIRE:STATE?")
 
     def _parse_wfmoutpre(self, response: str) -> dict[str, Any]:
         fields = response.strip().split(";")
@@ -136,7 +143,7 @@ class TDS2012(Instrument):
             )
         else:
             data = self.query_ascii_values("CURVe?", separator=",", container=list)
-
+        self.acquire_toggle(False)
         unscaled = np.array(data, dtype="double")
         scaled = (unscaled - yoff) * ymult + yzero
         timebase = np.arange(len(data)) * xinc + xzero
@@ -152,14 +159,15 @@ class TDS2012(Instrument):
         self.write(f"HORizontal:MAIn:POSition {position}")
 
     def opc(self):
-        self.query("*OPC?")
+        resp = self.query("*OPC?")
+        return resp
 
     def wait(self):
         self.write("*WAI")
 
 
 class TDS2012C(TDS2012):
-    def __init__(self, scpi_info: SCPI_Info, backend: str = "@py"):
+    def __init__(self, scpi_info: SCPI_Info, backend: str = Config().get("custom_backend","")):
         super().__init__(scpi_info, backend)
 
     def reset(self):

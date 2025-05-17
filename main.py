@@ -14,7 +14,7 @@ from wasic_test import test_function
 def main():
     # Create the directory if it doesn't exist
     os.makedirs("data", exist_ok=True)
-
+    os.environ["STREAMLIT_SERVER_HEADLESS"] = "true"
     # Setup handlers
     file_handler = logging.FileHandler(os.path.join("data", "wasic.log"), mode="w")
     stream_handler = logging.StreamHandler()

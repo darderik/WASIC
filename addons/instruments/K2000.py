@@ -1,7 +1,6 @@
 from easy_scpi import Instrument
 from instruments import SCPI_Info, property_info
 from typing import List
-from easy_scpi import Property as Scpi_Property
 from config import Config
 
 

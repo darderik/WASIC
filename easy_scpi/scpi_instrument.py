@@ -10,7 +10,7 @@ from pyvisa.resources import Resource, MessageBasedResource
 
 class helper_methods:
     @staticmethod
-    def get_resource_list(backend: str = "") -> Tuple[str]:
+    def get_resource_list(backend: str = ""):
         """
         Returns a list of all available resources.
 
@@ -21,7 +21,7 @@ class helper_methods:
         return rm.list_resources()
 
     @staticmethod
-    def val_to_bool(val: str) -> bool:
+    def val_to_bool(val) -> bool:
         """
         Converts a string to a boolean.
 
@@ -32,10 +32,10 @@ class helper_methods:
             return val
         if isinstance(val, str):
             val = val.lower()
-            if val in ["1", "true", "on"]:
-                return True
-            elif val in ["0", "false", "off"]:
-                return False
+        if val in ["1", "true", "on", 1]:
+            return True
+        elif val in ["0", "false", "off", 0]:
+            return False
         raise ValueError(f"Invalid value for boolean conversion: {val}")
 
 

@@ -36,7 +36,8 @@ def main():
     # New thread test function
     # Create and start a new thread to run test_function
     test_thread = threading.Thread(target=test_function, daemon=True)
-    test_thread.start()
+
+    #    test_thread.start()
 
     streamlit.web.bootstrap.run(script_path, False, [], {})
 

@@ -33,9 +33,6 @@ def chart_update_frag(curDataList, paused, placeholders) -> None:
 # Check if a task is currently running
 is_task_running: bool = tasks_obj._is_running is not None
 
-# Run check on tasks resource
-tasks_obj.check()
-
 # Set the main title of the page
 st.title("🔧 Tasks Selector")
 
@@ -120,38 +117,47 @@ if is_task_running and tasks_obj._is_running is not None:
     #   with st.container():
     # Display Data Visualization
 
-    with st.expander("📊 Data Visualization", expanded=True):
-        running_task: Task = tasks_obj._is_running
-        if running_task is not None:
-            curDataList: Optional[List[ChartData]] = running_task.data
-            placeholders: List[DeltaGenerator] = []
-            if tasks_obj._is_running is not None:
-                cur_charts = cur_task.data
-                num_charts = len(cur_charts)
-                for chart in cur_charts:
-                    new_empty_placeholder: DeltaGenerator = st.empty()
-                    with new_empty_placeholder:
-                        st.title(chart.name)
-                        st.text(
-                            f"Current X Y Raw count: {len(chart.raw_x)},{len(chart.raw_y)}"
-                        )
-                        st.text(
-                            f"Current X Y Processed count: {len(chart.x)},{len(chart.y)}"
-                        )
-                        placeholders.append(new_empty_placeholder)
-                st.markdown("---")
-                paused = st.checkbox("Pause Data", False)
-                if paused:
-                    if curDataList is not None:
-                        for idx, curChartData in enumerate(curDataList):
-                            fig = make_plotly_figure(curChartData)
-                            placeholders[idx].plotly_chart(
-                                fig,
-                                use_container_width=True,
-                            )
-                else:
-                    chart_update_frag(
-                        curDataList=curDataList,
-                        paused=paused,
-                        placeholders=placeholders,
+with st.expander("📊 Data Visualization", expanded=True):
+    running_task: Optional[Task] = tasks_obj._is_running
+    if running_task is not None:
+        curDataList: Optional[List[ChartData]] = running_task.data
+        chart_placeholders: List[DeltaGenerator] = []
+        count_placeholders: List[DeltaGenerator] = []
+        if tasks_obj._is_running is not None:
+            cur_charts = cur_task.data
+            num_charts = len(cur_charts)
+            for chart in cur_charts:
+                # Create separate placeholders for counts and charts
+                count_placeholder: DeltaGenerator = st.empty()
+                chart_placeholder: DeltaGenerator = st.empty()
+
+                # Display counts in the count placeholder
+                with count_placeholder:
+                    st.title(chart.name)
+                    st.title(
+                        f"Current X Y Raw count: {len(chart.raw_x)},{len(chart.raw_y)}"
                     )
+                    st.title(
+                        f"Current X Y Processed count: {len(chart.x)},{len(chart.y)}"
+                    )
+
+                # Append placeholders to respective lists
+                count_placeholders.append(count_placeholder)
+                chart_placeholders.append(chart_placeholder)
+
+            st.markdown("---")
+            paused = st.checkbox("Pause Data", False)
+            if paused:
+                if curDataList is not None:
+                    for idx, curChartData in enumerate(curDataList):
+                        fig = make_plotly_figure(curChartData)
+                        chart_placeholders[idx].plotly_chart(
+                            fig,
+                            use_container_width=True,
+                        )
+            else:
+                chart_update_frag(
+                    curDataList=curDataList,
+                    paused=paused,
+                    placeholders=chart_placeholders,
+                )

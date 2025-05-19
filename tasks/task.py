@@ -85,6 +85,7 @@ class Task:
                         "y_label": chart.y_label,
                         "info": chart.info,
                         "custom_name": chart.custom_name,
+                        "custom_type": chart.custom_type,
                     },
                     file,
                     skipkeys=True,
@@ -105,27 +106,31 @@ class Task:
             self.write_chart_to_json(chart, file_path)
 
     def backup_saver(self):
-        # Flag check
-        if not Config().get("backup_switch", False):
-            return
-        date: str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        sleep_time: float = Config().get("backup_schedule")
-        root_path = os.path.join(
-            self._config.get("data_charts_path"),
-            self._config.get("data_charts_relative_bkps"),
-        )
-        postfix: str = f"{date}.json"
-        while not self.exit_flag.is_set():
-            local_data = copy.copy(self.data)
-            for chart in local_data:
-                # Set a backup name
-                backup_file_name: str = f"BKP_{chart.name}_{postfix}"
-                full_path = os.path.join(
-                    root_path,
-                    backup_file_name,
-                )
-                self.write_chart_to_json(chart, full_path)
-            time.sleep(sleep_time)
+        try:
+            # Flag check
+            if not Config().get("backup_switch", False):
+                return
+            date: str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            sleep_time: float = Config().get("backup_schedule")
+            file_path: str = (
+                self._config.get("data_charts_path")
+                + "\\"
+                + self._config.get("data_charts_relative_bkps")
+            )
+            postfix: str = f"{date}.json"
+            while not self.exit_flag.is_set():
+                local_data = copy.copy(self.data)
+                for chart in local_data:
+                    # Set a backup name
+                    backup_file_name: str = f"BKP_{chart.name}_{postfix}"
+                    full_path = os.path.join(
+                        file_path,
+                        backup_file_name,
+                    )
+                    self.write_chart_to_json(chart, full_path)
+                time.sleep(sleep_time)
+        except Exception as e:
+            logger.error(f"Error in backup saver: {e}")
 
     def has_instruments(self) -> bool:
         """Checks if all associated instruments are available."""

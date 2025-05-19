@@ -5,7 +5,7 @@ from connections import Connections
 from config import Config
 from instruments.properties import property_info
 from easy_scpi import Instrument  # Adjust the import path as necessary
-from easy_scpi import Property as Scpi_Property
+from easy_scpi import helper_methods
 
 connections_obj = Connections()
 conf_obj = Config()
@@ -20,7 +20,7 @@ def send_parameters(instr_properties: List[property_info]) -> None:
             if prop.typecheck != bool:
                 parsed_value = supposed_type(unparsed_value)
             else:
-                parsed_value = Scpi_Property.val2bool(unparsed_value)
+                parsed_value = helper_methods.val_to_bool(unparsed_value)
             if (
                 parsed_value != prop.associated_getter()
                 and unparsed_value != prop.associated_getter()
@@ -76,7 +76,7 @@ def instruments_page(alias: str) -> None:
                             # Use radio with no label to save space
                             default_idx = (
                                 0
-                                if Scpi_Property.val2bool(prop.associated_getter())
+                                if helper_methods.val_to_bool(prop.associated_getter())
                                 else 1
                             )
                             st.radio(

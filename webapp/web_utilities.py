@@ -22,11 +22,12 @@ def make_plotly_figure(chart_data: ChartData):
             labels={"x": chart_data.x_label, "y": chart_data.y_label},
         )
     elif chart_data.custom_type == "histogram":
+        # y values on x for aesthetic reasons
         return px.histogram(
-            pd.DataFrame({"y": chart_data.y}),
-            y="y",
+            pd.DataFrame({"x": chart_data.y}),
+            y="x",
             title=chart_data.name,
-            labels={"y": chart_data.y_label},
+            labels={"x": chart_data.y_label},
         )
     else:  # interpolated
         return px.line(

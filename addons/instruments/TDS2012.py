@@ -79,6 +79,7 @@ class TDS2012(Instrument):
         self.write(f"TRIGger:MAIn:EDGE:SLOpe {slope}")
         self.write(f"TRIGger:MAIn:LEVel {level}")
         self.write(f"TRIGger:MAIn:MODe {mode}")
+        self.write(f"SELECT:CH{source} ON")
 
     def acquire_toggle(self, state: bool = True):
         self.write("ACQuire:STATE ON" if state else "ACQuire:STATE OFF")

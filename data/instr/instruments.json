@@ -1,18 +1,16 @@
 [
     {
-        "port": "COM13",
-        "mode": "COM",
+        "port": "USB0::0x0699::0x03A3::C022725::INSTR",
+        "baud_rate": 0,
+        "idn": "TEKTRONIX,TDS 2012C,C022725,CF:91.1CT FV:v24.18\n",
+        "alias": "TDS 2012",
+        "name": "TEKTRONIX TDS 2012C"
+    },
+    {
+        "port": "COM6",
         "baud_rate": 115200,
         "idn": "DIIEM,Relay Matrix,0035001F3133510137303835,V1.0",
         "alias": "Relay Matrix",
         "name": "DIIEM Relay Matrix"
-    },
-    {
-        "port": "COM7",
-        "mode": "COM",
-        "baud_rate": 19200,
-        "idn": "TEKTRONIX,TDS 2012,0,CF:91.1CT FV:v2.12 TDS2CM:CMV:v1.04",
-        "alias": "TDS 2012",
-        "name": "TEKTRONIX TDS 2012"
     }
 ]

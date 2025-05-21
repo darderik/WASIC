@@ -1,6 +1,9 @@
 from connections import Connections
 from addons.instruments import TDS2012C, RelayMatrix, TBS1052C
 from addons.tasks import Tasks
+import logging
+from config import Config
+import os
 
 
 def test_function():
@@ -9,60 +12,44 @@ def test_function():
 
 
 def test_main():
+    file_handler = logging.FileHandler(os.path.join("data", "wasic.log"), mode="w")
+    stream_handler = logging.StreamHandler()
+    logging.basicConfig(
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        level=Config().get("log_level", "NOTSET"),
+        handlers=[file_handler, stream_handler],
+    )
+    logging.basicConfig(
+        level=logging.DEBUG,
+    )
     Connections().fetch_all_instruments()
     # Get instrument tbs 1052C
-    scope_entry = Connections().get_instrument("tds 2012C")
-    relay_matrix: RelayMatrix = (
-        Connections().get_instrument("Relay Matrix").scpi_instrument
-    )
-    scope: TDS2012C = tbs.scpi_instrument
-    points = 2000
-    scope.trigger_config(
-        source=2,
-        slope="RISE",
-        level=1,
-        mode="normal",
-    )
-    # Hard coded positioning
-    scope.vertical_position(1, -3)
-    scope.vertical_position(2, 1)
-    scope.vertical_scale(1, 1)
-    scope.vertical_scale(2, 1)
-    scope.horizontal_position(3e-3)
-    # Data setup
-    scope.acquire_toggle(False)
-    scope.initialize_waveform_settings(
-        points=points,
-    )
-    # Reset and ground (A1)
-    relay_matrix.switch_commute_reset_all()
-    relay_matrix.switch_commute_exclusive("a1")
-
-    # try to break connection (stability test)loop it
-    # use queries and write all
-    for i in range(2000):
-        # Rise sequence
-        # Set 25us for rise sequence
-        scope.time_scale = 25e-6
-        relay_matrix.opc()
-        scope.single()
-        # NCS trigger
-        relay_matrix.switch_commute_exclusive("a2")
-        relay_matrix.opc()
-        scope.wait()
-        t_rise, V_rise = scope.get_waveform(points=points)
-        scope.acquire_toggle(False)
-        scope.wait()
-        # Set 1ms for fall sequence
-        scope.time_scale = 1e-3
-        scope.horizontal_position(2.3e-3)
-        # Arm trigger
-        scope.single()
-        # NCS trigger
-        relay_matrix.switch_commute_exclusive("a1")
-        relay_matrix.opc()
-        scope.wait()
-        t_fall, V_fall = scope.get_waveform(points=points)
+    relay_entry = Connections().get_instrument("Relay Matrix")
+    relay_scpi: RelayMatrix = relay_entry.scpi_instrument
+    for _ in range(500):
+        relay_scpi.id
+        relay_scpi.switch_commute("f5")
+        relay_scpi.opc()
+        relay_scpi.id
+        relay_scpi.opc()
+        relay_scpi.id
+        relay_scpi.opc()
+        relay_scpi.id
+        relay_scpi.opc()
+        for _ in range(1000):
+            relay_scpi.id
+            relay_scpi.opc()
+            relay_scpi.switch_commute("f5")
+        relay_scpi.opc()
+        relay_scpi.switch_commute_exclusive("d1")
+        relay_scpi.switch_commute_reset_all()
+        for _ in range(10000):
+            relay_scpi.opc()
+        for _ in range(10000):
+            relay_scpi.switch_commute("f5")
+            relay_scpi.opc()
+            relay_scpi.id
+            relay_scpi.opc()
 
 
 if __name__ == "__main__":

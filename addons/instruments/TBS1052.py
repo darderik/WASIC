@@ -38,7 +38,6 @@ class TBS1052C(Instrument):
         self.write("ACQUIRE:STATE OFF")
         self.write("*cls")  # clear ESR
         self.query("*OPC?")
-        # Overridden methods
 
     def initialize_waveform_settings(
         self,

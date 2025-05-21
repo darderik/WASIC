@@ -1,7 +1,6 @@
 from easy_scpi import Instrument
 from instruments import SCPI_Info, property_info
 from typing import List
-from easy_scpi import Property as Scpi_Property
 from config import Config
 
 
@@ -40,7 +39,7 @@ class SM2401(Instrument):
         Turns off the output.
     """
 
-    def __init__(self, scpi_info: SCPI_Info,**kwargs) -> None:
+    def __init__(self, scpi_info: SCPI_Info, **kwargs) -> None:
         """
         Initializes the SM2401 object with the specified SCPI parameters.
 

@@ -17,12 +17,14 @@ def rm_transient_2012_C(data: List[ChartData], exit_flag: Event) -> None:
         math_formula_y=lambda transient: calculate_rise_time(transient),
         pop_raw=True,
         custom_type="histogram",
+        sample_points_y=1000,
     )
     transient_fall_chart: ChartData = ChartData(
         name="Transienti in discesa",
         math_formula_y=lambda transient: calculate_fall_time(transient),
         pop_raw=True,
         custom_type="histogram",
+        sample_points_y=1000,
     )
     data.append(transient_rise_chart)
     data.append(transient_fall_chart)
@@ -43,7 +45,7 @@ def rm_transient_2012_C(data: List[ChartData], exit_flag: Event) -> None:
         data, exit_flag, generic_processor
     )
     # End of Init section -----
-    points: int = 2000
+    points: int = 2500
     # Scope setup
     time.sleep(1)
     # Setup trigger with fall detection
@@ -75,47 +77,54 @@ def rm_transient_2012_C(data: List[ChartData], exit_flag: Event) -> None:
     try:
         while not exit_flag.is_set():
             # Rise sequence
-            # Set 25us for rise sequence
-            scope.time_scale = 1e-3
+            scope.time_scale = 50e-6
+            scope.horizontal_position(2.870e-3)
             scope.single()
             # ??
-            scope.id
             scope.wait()
             # NCS trigger
             relay_matrix.switch_commute_exclusive("a2")
             relay_matrix.opc()
-            scope.wait()
+            scope.opc()
             t_rise, V_rise = scope.get_waveform(points=points)
             scope.acquire_toggle(False)
-            # Set 1ms for fall sequence
-            scope.time_scale = 1e-3
-            scope.horizontal_position(2.3e-3)
+            # Focus on fall sequence slope
+            scope.time_scale = 250e-6
+            scope.horizontal_position(2.712e-3)
 
             # Arm trigger
             scope.single()
             # ?? need query after single trigger
-            scope.id
             scope.wait()
             # NCS trigger
             relay_matrix.switch_commute_exclusive("a1")
             relay_matrix.opc()
-            scope.wait()
+            scope.opc()
             t_fall, V_fall = scope.get_waveform(points=points)
 
             # Data processing
             if t_rise is None or V_rise is None or len(t_rise) == 0 or len(V_rise) == 0:
                 logger.error("Failed to acquire waveform data")
                 continue
-            transient_rise_chart.raw_y.append([t_rise, V_rise])
+            transient_rise_chart.raw_y.append([t_rise.tolist(), V_rise.tolist()])
             # Fall sequence
             if t_fall is None or V_fall is None or len(t_fall) == 0 or len(V_fall) == 0:
                 logger.error("Failed to acquire fall waveform data")
                 continue
-            transient_fall_chart.raw_y.append([t_fall, V_fall])
+            transient_fall_chart.raw_y.append([t_fall.tolist(), V_fall.tolist()])
             scope.acquire_toggle(False)
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        # Handle any cleanup or reset if necessary
+        relay_matrix.switch_commute_reset_all()
+        scope.acquire_toggle(False)
+        scope.opc()
+        # Reset the relay matrix
+        relay_matrix.switch_commute_reset_all()
     finally:
         relay_matrix.switch_commute_reset_all()
         exit_flag.set()
+        Tasks().check()
         if newThreadProcessor is not None:
             newThreadProcessor.join()
 

@@ -3,88 +3,40 @@ import platform
 import threading
 import time
 import pyvisa as visa
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Tuple
 from functools import wraps
 from pyvisa.resources import Resource, MessageBasedResource
 
 
-class Property(object):
-    """
-    Represents a SCPI property of the instrument
-    """
-
-    ON = "ON"
-    OFF = "OFF"
-
-    def __init__(self, inst: Resource, name: str, arg_separator: str = ","):
+class helper_methods:
+    @staticmethod
+    def get_resource_list(backend: str = ""):
         """
-        Represents a call to a SCPI instrument's property or method.
+        Returns a list of all available resources.
 
-        :param inst: A SCPI instrument resource.
-        :param name: Name of the property.
-            Used to recursively build the property call message.
-        :param arg_separator: Separator to use to separate
-            method arguments in a method call.
-            [Default: ',']
+        :param backend: The pyvisa backend to use for communication. [Default: '']
+        :returns: A list of all available resources.
         """
-        self.__inst: Resource = inst
-        self.name = name.upper()
-        self.arg_separator = arg_separator
-
-    def __getattr__(self, name: str):
-        return Property(
-            self.__inst,
-            ":".join((self.name, name.upper())),
-            arg_separator=self.arg_separator,
-        )
-
-    def __call__(self, *values, query=None):
-        """
-        Calls a SCPI command. If no values are passed it acts as a query 'COMMand?'
-        If values are passed it acts as a write 'COMMand [values]'.
-        For queries that require arguments, `query=True` can be passed.
-        Alternatively for writes that need no arguments, `query=False` can be passed.
-        """
-        args_passed = len(values) > 0
-        args = " " + self.arg_separator.join(map(str, values)) if args_passed else ""
-        query = (not args_passed) if query is None else query
-        if query:
-            return self.__inst.query(self.name + "?" + args)
-        else:
-            return self.__inst.write(self.name + args)
+        rm = visa.ResourceManager(backend)
+        return rm.list_resources()
 
     @staticmethod
-    def val2bool(val: bool | str) -> bool:
+    def val_to_bool(val) -> bool:
         """
-        Converts standard input to boolean values
+        Converts a string to a boolean.
 
-        True:  'on',  '1', 1, True
-        False: 'off', '0', 0, False
+        :param val: The string to convert.
+        :returns: True if the string is '1', 'true', or 'True', False otherwise.
         """
+        if isinstance(val, bool):
+            return val
         if isinstance(val, str):
             val = val.lower()
-            if val == "on" or val == "1":
-                return True
-            elif val == "off" or val == "0":
-                return False
-            else:
-                raise ValueError("Invalid input")
-
-        return bool(val)
-
-    @staticmethod
-    def val2state(val: str | bool) -> str:
-        """
-        Converts standard input to SCPI state
-
-        ON:  True,  '1', 1, 'on',  'ON'
-        OFF: False, '0', 0, 'off', 'OFF'
-        """
-        state = Property.val2bool(val)
-        if state:
-            return "ON"
-        else:
-            return "OFF"
+        if val in ["1", "true", "on", 1]:
+            return True
+        elif val in ["0", "false", "off", 0]:
+            return False
+        raise ValueError(f"Invalid value for boolean conversion: {val}")
 
 
 class SCPI_Instrument:
@@ -124,7 +76,7 @@ class SCPI_Instrument:
         """
         self.__backend: str = backend
         self.__rm = visa.ResourceManager(backend)
-        self.__inst: Optional[Resource] = None
+        self.__inst: Optional[MessageBasedResource] = None
         self.__port: Optional[str] = None
         self.__port_match: bool = port_match
         self.__rid: Optional[str] = None  # the resource id of the instrument
@@ -149,12 +101,6 @@ class SCPI_Instrument:
 
         del self.__inst
         del self.__rm
-
-    def __getattr__(self, name):
-        resp = Property(
-            self, self.prefix_cmds * ":" + name, arg_separator=self.arg_separator
-        )
-        return resp
 
     def __enter__(self):
         self.connect()
@@ -476,7 +422,7 @@ class SCPI_Instrument:
         ]
 
         matches = [match for match in matches if match is not None]
-        if len(matches) == 0:
+        if matches == []:
             raise RuntimeError(f"Could not find resource {resource}")
         elif len(matches) > 1:
             raise RuntimeError(f"Found multiple resources matching {resource}")

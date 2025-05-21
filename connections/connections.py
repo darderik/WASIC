@@ -207,8 +207,25 @@ class Connections:
                 write_terminator="\n",
                 read_terminator="\n",
             )
-            cur_instr.connect()
-            id_str = cur_instr.id
+            # prepare for comm error and retry 5 times
+            id_str = ""
+            for _ in range(5):
+                try:
+                    cur_instr.connect()
+                    id_str = cur_instr.id
+                    if id_str:
+                        break
+                # Temporary VI_ERROR_INP_PROT_VIOLATION error
+                except Exception as e:
+                    logger.warning(
+                        f"Protocol error: |{e}| while trying to read IDN from {usb_instr}. Retrying..."
+                    )
+                    time.sleep(0.5)
+            if id_str == "":
+                logger.error(
+                    f"Failed to read IDN from {usb_instr} after 5 attempts. Skipping..."
+                )
+                return
             alias = is_instrument_in_aliases(idn=id_str)
             del cur_instr
             if alias:
@@ -303,6 +320,11 @@ class Connections:
                     instr_info_list: List[SCPI_Info] = [
                         SCPI_Info(**item) for item in instr_info_json
                     ]
+                # Understand if ni-visa backend is needed (usb instruments)
+                usb_instr = [item for item in instr_info_list if "USB" in item.port]
+                if usb_instr != []:
+                    self.backend = Config().get("custom_backend", "")
+
                 for instr_info in instr_info_list:
                     if not self.is_scpi_info_busy(instr_info):
                         instrument_entry: Optional[Instrument_Entry] = (

@@ -6,6 +6,7 @@ from config import Config
 import threading
 import time
 
+
 class RelayMatrix(Instrument):
     """
     RelayMatrix Class
@@ -32,7 +33,7 @@ class RelayMatrix(Instrument):
         Retrieves the device identification and firmware version.
     """
 
-    def __init__(self, scpi_info: SCPI_Info,backend="@py", **kwargs) -> None:
+    def __init__(self, scpi_info: SCPI_Info, backend="@py", **kwargs) -> None:
         """
         Initializes the RelayMatrix object with the specified SCPI parameters.
 
@@ -47,24 +48,22 @@ class RelayMatrix(Instrument):
             port=scpi_info.port,
             timeout=5000,
             baud_rate=scpi_info.baud_rate,
-            handshake=False,
+            handshake=True,
             write_termination="\n",
             read_termination="\n",
-            encoding="utf-8",
-            backend=backend,
+            backend="@py",
+            encoding="ascii",
         )
         self.__child_lock = threading.RLock()
         self.properties_list: List[property_info] = []  # No properties
+
     def opc(self) -> None:
         """
         Waits for the operation to complete.
         """
-        resp=self.query("*OPC?")
+        resp = self.query("*OPC?")
         return resp
-    def query(self, msg):
-        with self.__child_lock:
-            time.sleep(0.1) 
-            return super().query(msg)
+
     def switch_commute(self, *relays: str) -> None:
         """
         Activates or deactivates one or more relays in the matrix.
@@ -76,7 +75,6 @@ class RelayMatrix(Instrument):
         """
         command = f"switch:commute {' '.join(relays)}"
         self.write(command)
-        self.opc()
 
     def switch_commute_reset(self, *relays: str) -> None:
         """
@@ -89,7 +87,6 @@ class RelayMatrix(Instrument):
         """
         command = f"switch:commute:reset {' '.join(relays)}"
         self.write(command)
-        self.opc()
 
     def switch_commute_reset_all(self) -> None:
         """

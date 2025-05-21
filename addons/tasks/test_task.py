@@ -6,6 +6,7 @@ import random
 import time
 import logging
 from .utilities import spawn_data_processor, generic_processor
+from connections import Connections
 
 # filepath: c:\Users\Dardo\OneDrive\Progetti\Python\WASIC\user_defined\tasks\test_task.py
 
@@ -20,14 +21,10 @@ def test_task_function(data: List[ChartData], exit_flag: Event) -> None:
         pop_raw=True,
     )
     data.append(test_chart)
-    newThreadProcessor: Optional[Thread] = spawn_data_processor(
-        data, exit_flag, generic_processor
-    )
+    scope = Connections().get_instrument("tds 2012c")
     try:
-        while not exit_flag.is_set():
-            random_value = random.gauss(0, 10)
-            test_chart.raw_y.append(random_value)
-            time.sleep(0.5)
+
+        pass
     except Exception as e:
         logger.error(f"Error in test task: {e}")
     finally:

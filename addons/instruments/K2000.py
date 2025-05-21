@@ -1,8 +1,8 @@
 from easy_scpi import Instrument
 from instruments import SCPI_Info, property_info
 from typing import List
-from easy_scpi import Property as Scpi_Property
 from config import Config
+from easy_scpi import helper_methods
 
 
 class K2000(Instrument):
@@ -98,7 +98,7 @@ class K2000(Instrument):
         """
         Returns the auto range setting for DC voltage measurement.
         """
-        return Scpi_Property.val2bool(int(self.query(":SENS:VOLT:DC:RANGE:AUTO?")))
+        return helper_methods.val_to_bool(int(self.query(":SENS:VOLT:DC:RANGE:AUTO?")))
 
     @autorange.setter
     def autorange(self, value: str):  # Accepts ON OFF

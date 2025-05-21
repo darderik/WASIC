@@ -41,21 +41,6 @@ class TDS2012(Instrument):
         self.write("HEADer OFF")
         self.write("ACQuire:STATE OFF")
         self.write("*CLS")
-        
-
-    def query(self, msg):
-        with self._childlock:
-            time.sleep(0.1)
-            resp= super().query(msg)
-            resp=self.opc()
-            return resp
-
-    def write(self, msg):
-        with self._childlock:
-            time.sleep(0.1)
-            wrote = super().write(msg)
-            resp = self.opc()
-            return wrote
 
     def initialize_waveform_settings(
         self,
@@ -94,6 +79,7 @@ class TDS2012(Instrument):
         self.write(f"TRIGger:MAIn:EDGE:SLOpe {slope}")
         self.write(f"TRIGger:MAIn:LEVel {level}")
         self.write(f"TRIGger:MAIn:MODe {mode}")
+        self.write(f"SELECT:CH{source} ON")
 
     def acquire_toggle(self, state: bool = True):
         self.write("ACQuire:STATE ON" if state else "ACQuire:STATE OFF")
@@ -167,7 +153,9 @@ class TDS2012(Instrument):
 
 
 class TDS2012C(TDS2012):
-    def __init__(self, scpi_info: SCPI_Info, backend: str = Config().get("custom_backend","")):
+    def __init__(
+        self, scpi_info: SCPI_Info, backend: str = Config().get("custom_backend", "")
+    ):
         super().__init__(scpi_info, backend)
 
     def reset(self):

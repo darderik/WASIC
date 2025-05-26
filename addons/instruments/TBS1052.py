@@ -16,18 +16,16 @@ class TBS1052C(Instrument):
     def __init__(
         self,
         scpi_info: SCPI_Info,
-        backend: str = Config().get("custom_backend", ""),
         **kwargs,
     ):
         # Always use the VISA/USB backend for this model
         super().__init__(
-            backend=backend,
             port=scpi_info.port,
             read_termination="\n",
             write_termination="\n",
             timeout=50000,
             encoding="latin-1",
-            **kwargs,
+            backend=kwargs.get("backend", ""),
         )
         self.connect()
         self.__childlock = threading.RLock()

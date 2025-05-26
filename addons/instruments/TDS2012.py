@@ -12,10 +12,10 @@ delay: float = 0.1  # seconds
 
 
 class TDS2012(Instrument):
-    def __init__(self, scpi_info: SCPI_Info, backend: str = "@py"):
+    def __init__(self, scpi_info: SCPI_Info, **kwargs):
         if scpi_info.baud_rate != 0:
             super().__init__(
-                backend=backend,
+                backend=kwargs.get("backend", "@py"),
                 port=scpi_info.port,
                 baud_rate=scpi_info.baud_rate,
                 read_termination="\n",
@@ -29,7 +29,7 @@ class TDS2012(Instrument):
             # UsbMTC instrument
             super().__init__(
                 port=scpi_info.port,
-                backend=backend,
+                backend=kwargs.get("backend", Config().get("custom_backend", "")),
                 read_termination="\n",
                 write_termination="\n",
                 timeout=50000,
@@ -153,10 +153,8 @@ class TDS2012(Instrument):
 
 
 class TDS2012C(TDS2012):
-    def __init__(
-        self, scpi_info: SCPI_Info, backend: str = Config().get("custom_backend", "")
-    ):
-        super().__init__(scpi_info, backend)
+    def __init__(self, scpi_info: SCPI_Info, **kwargs):
+        super().__init__(scpi_info, **kwargs)
 
     def reset(self):
         self.write("*RST")

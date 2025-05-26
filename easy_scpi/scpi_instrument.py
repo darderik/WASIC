@@ -1,3 +1,5 @@
+# Portions of this file are adapted from easy-scpi, licensed under MIT and Apache 2.0.
+# See LICENSE-MIT and LICENSE-APACHE for details.
 import re
 import platform
 import threading
@@ -76,7 +78,7 @@ class SCPI_Instrument:
         """
         self.__backend: str = backend
         self.__rm = visa.ResourceManager(backend)
-        self.__inst: Optional[MessageBasedResource] = None
+        self.__inst = None
         self.__port: Optional[str] = None
         self.__port_match: bool = port_match
         self.__rid: Optional[str] = None  # the resource id of the instrument
@@ -427,6 +429,10 @@ class SCPI_Instrument:
         elif len(matches) > 1:
             raise RuntimeError(f"Found multiple resources matching {resource}")
 
+        if matches[0] is None:
+            raise RuntimeError(
+                f"Unexpected error: match for resource {resource} is None"
+            )
         r_name = matches[0].group(0)
         return r_name
 

@@ -31,7 +31,7 @@ class K2000(Instrument):
         Performs an AC voltage measurement.
     """
 
-    def __init__(self, scpi_info: SCPI_Info):
+    def __init__(self, scpi_info: SCPI_Info, **kwargs) -> None:
         """
         Initializes the K2000 object with the specified SCPI parameters.
 
@@ -48,6 +48,7 @@ class K2000(Instrument):
             read_termination="\n",
             write_termination="\n",
             timeout=5000,
+            backend=kwargs.get("backend", ""),
         )
         self.connect()
         self.disable_beep()

@@ -65,35 +65,39 @@ def detect_baud_rate(
         else data.encode() if data is not None else b"*IDN?\n"
     )
     detected_baud_rate = 0
-    with serial.Serial(port) as ser:
-        ser.timeout = timeout
-        ser.stopbits = sbits
-        for baudrate in baudrates:
-            logger.debug(
-                f"Trying baudrate: {baudrate} on port {port} with sbits {sbits}"
-            )
-            ser.baudrate = baudrate
-            ser.write(b"syst:rem\n")  # Explicitly switch in remote
-            ser.write(b"\n\n\n\n")  # Flush
-            sleep(10e-3)
-            ser.read_all()
-            ser.write(data)
-            sleep(10e-3)
-            response = ser.read_until(expected=b"\n")
-            while ser.in_waiting != 0:
-                _ = ser.read(ser.in_waiting)
+    try:
+        with serial.Serial(port, timeout=0.5, write_timeout=0.5) as ser:
+            ser.timeout = timeout
+            ser.stopbits = sbits
+            for baudrate in baudrates:
+                logger.debug(
+                    f"Trying baudrate: {baudrate} on port {port} with sbits {sbits}"
+                )
+                ser.baudrate = baudrate
+                ser.write(b"syst:rem\n")  # Explicitly switch in remote
+                ser.write(b"\n\n\n\n")  # Flush
+                sleep(10e-3)
+                ser.read_all()
+                ser.write(data)
+                sleep(10e-3)
+                response = ser.read_until(expected=b"\n")
+                while ser.in_waiting != 0:
+                    _ = ser.read(ser.in_waiting)
 
-            if validate_response(response):
-                detected_baud_rate = baudrate
-                current_idn = response.decode().strip()
-                break
-    ser.close()
-    # Recursive call
-    if detected_baud_rate != 0:
-        return (detected_baud_rate, current_idn)
-    elif sbits != 2:  # Wrong stop bits?
-        return detect_baud_rate(port, timeout=timeout, sbits=2)
-    else:
+                if validate_response(response):
+                    detected_baud_rate = baudrate
+                    current_idn = response.decode().strip()
+                    break
+        ser.close()
+        # Recursive call
+        if detected_baud_rate != 0:
+            return (detected_baud_rate, current_idn)
+        elif sbits != 2:  # Wrong stop bits?
+            return detect_baud_rate(port, timeout=timeout, sbits=2)
+        else:
+            return None
+    except (serial.SerialException, serial.SerialTimeoutException) as e:
+        logger.error(f"Serial exception on port {port}: {e}")
         return None
 
 

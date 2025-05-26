@@ -37,7 +37,7 @@ class NV34420(Instrument):
         Configures the meter for 4-wire resistance measurement.
     """
 
-    def __init__(self, scpi_info: SCPI_Info):
+    def __init__(self, scpi_info: SCPI_Info, **kwargs):
         """
         Initializes the NV34420 object with the specified SCPI parameters.
 
@@ -55,6 +55,8 @@ class NV34420(Instrument):
             write_termination="\n",
             stop_bits=StopBits.two,
             timeout=5000,
+            backend=kwargs.get("backend", ""),
+            encoding="latin-1",
         )
         self.connect(explicit_remote="SYSTEM:REMOTE")
         self.disable_beep()

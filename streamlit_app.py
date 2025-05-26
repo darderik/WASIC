@@ -9,6 +9,7 @@ page_array = [
     st.Page(page="./webapp/pages/instruments.py", title="Instruments"),
     st.Page(page="./webapp/pages/tasks.py", title="Tasks"),
     st.Page(page="./webapp/pages/charts.py", title="Charts"),
+    st.Page(page="./webapp/pages/logs.py", title="Logs"),
 ]
 st.set_page_config(page_title="WASIC", page_icon="🔌", layout="wide")
 pg = st.navigation(page_array)

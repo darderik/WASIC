@@ -54,7 +54,7 @@ class SM2401(Instrument):
             read_termination="\n",
             write_termination="\n",
             timeout=5000,
-            **kwargs,
+            backend=kwargs.get("backend", "@py"),
         )
         self.connect()
         # (Optional) Perform any initial configuration, e.g., disable beeps

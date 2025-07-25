@@ -76,11 +76,6 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
     relay_matrix: RelayMatrix = relay_matrix_entry.scpi_instrument
     k2000: K2000 = k2000_entry.scpi_instrument
 
-    # Thread creation
-    newThreadProcessor: Thread = spawn_data_processor(
-        data, exit_flag, generic_processor
-    )
-
     # Configure Instruments
     k2000.disable_beep()
     k2000.configure_4w_resistance(nplc=10)

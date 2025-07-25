@@ -17,14 +17,16 @@ def test_task_function(data: List[ChartData], exit_flag: Event) -> None:
     test_chart = ChartData(
         name="Test Chart",
         math_formula_y=lambda x: x**2,
-        custom_type="histogram",
+        custom_type="scatter",
         pop_raw=True,
     )
     data.append(test_chart)
-    scope = Connections().get_instrument("tds 2012c")
     try:
-
-        pass
+        while not exit_flag.is_set():
+            random_number = random.randint(1, 100)
+            test_chart.raw_y.append(random_number)
+            test_chart.x.append(random_number)
+            time.sleep(1)  # Simulate work being done
     except Exception as e:
         logger.error(f"Error in test task: {e}")
     finally:

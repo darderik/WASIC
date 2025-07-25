@@ -27,8 +27,10 @@ def custom_instr_handler(scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
     # Fetch from config singleton
     for instr_ext in instr_extensions:
         if instr_ext[0].lower() in scpi_info.idn.lower():
+            type_name = instr_ext[0]
+            type_obj = instr_ext[1]
             logger.debug(f"Found extension for {scpi_info.idn}")
-            newSCPI = instr_ext[1](scpi_info=scpi_info, backend=cur_backend)
+            newSCPI = type_obj(scpi_info=scpi_info, backend=cur_backend)
             break
     # No extension found, use default instrument class
     if newSCPI is None:

@@ -36,10 +36,6 @@ def mytask_1(data: List[ChartData], exit_flag: Event) -> None:
         logger.error("Instrument not found")
         exit_flag.set()
         return
-    # A single data processor function should handle all charts data associated within the task
-    newThreadProcessor: Thread = spawn_data_processor(
-        data, exit_flag, generic_processor
-    )
     try:
         while not exit_flag.is_set():
             curV = myInstrument.voltp

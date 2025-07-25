@@ -40,10 +40,6 @@ def rm_transient_2012_C(data: List[ChartData], exit_flag: Event) -> None:
     scope: TDS2012C = scope_entry.scpi_instrument
     relay_matrix: RelayMatrix = rm_entry.scpi_instrument
 
-    # A single data processor function should handle all charts data associated within the task
-    newThreadProcessor: Optional[Thread] = spawn_data_processor(
-        data, exit_flag, generic_processor
-    )
     # End of Init section -----
     points: int = 2500
     # Scope setup

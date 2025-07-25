@@ -43,16 +43,12 @@ class RaspberrySIM(Instrument):
     4. Extend or override methods as needed to achieve custom behavior for specific hardware.
     """
 
-    def __init__(self, scpi_info: SCPI_Info):
+    def __init__(self, scpi_info: SCPI_Info, **kwargs):
         curPort: str = scpi_info.port
         curBaudRate: int = scpi_info.baud_rate
-        super().__init__(
-            port=curPort,
-            timeout=5000,
-            baud_rate=curBaudRate,
-        )
+        super().__init__(port=curPort, timeout=5000, baud_rate=curBaudRate, **kwargs)
         self.init_properties()
-
+        self.connect()  # Ensure the instrument is connected
         # other initialization code...
 
     # Begin custom code, specific to instrument
@@ -75,14 +71,14 @@ class RaspberrySIM(Instrument):
         """
         Returns the voltage reading.
         """
-        return float(self.voltage())
+        return float(self.query("voltage?"))
 
     @voltp.setter
     def voltp(self, volts: float):
         """
         Sets the voltage of the instrument.
         """
-        self.voltage(volts)
+        self.write(f"voltage {volts}")
 
 
 # Mandatory append to register instrument class with its alias

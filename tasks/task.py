@@ -47,10 +47,18 @@ class Task:
         """Starts the task's function in a new non-blocking thread if not already running."""
         if self.thread_handle is None or not self.thread_handle.is_alive():
             self.exit_flag.clear()
+            # Task thread
             self.thread_handle = Thread(
                 target=self.function, args=(self.data, self.exit_flag)
             )
             self.thread_handle.start()
+            # Data processor thread
+            from addons.tasks.utilities import spawn_data_processor, generic_processor
+
+            self.data_processor: Optional[Thread] = spawn_data_processor(
+                self.data, self.exit_flag, generic_processor
+            )
+            # Backup thread
             self.bkp_thread = Thread(target=self.backup_saver)
             self.bkp_thread.start()
             logger.info(f"Task {self.name} started.")

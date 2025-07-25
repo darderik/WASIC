@@ -5,7 +5,7 @@ import platform
 import threading
 import time
 import pyvisa as visa
-from typing import List, Union, Optional, Tuple
+from typing import Any, List, Union, Optional, Tuple
 from functools import wraps
 from pyvisa.resources import Resource, MessageBasedResource
 
@@ -88,6 +88,9 @@ class SCPI_Instrument:
         self.arg_separator: str = arg_separator
         self.prefix_cmds: bool = prefix_cmds
 
+        # WASIC Edits
+        self.properties_list: List[Any] = []
+
         if handshake is True:
             handshake = "OK"
 
@@ -98,7 +101,7 @@ class SCPI_Instrument:
         """
         Disconnects and deletes the Instrument
         """
-        if self.connected:
+        if self.__inst is not None or self.connected:
             self.disconnect()
 
         del self.__inst
@@ -218,27 +221,6 @@ class SCPI_Instrument:
         Alias for connected.
         """
         return self.connected
-
-    def connect(self, explicit_remote=False):
-        """
-        Connects to the instrument on the given port.
-        """
-        if not self.rid:
-            raise RuntimeError("Can not connect. No resource id provided.")
-
-        if self.__inst is None:
-            self.__inst = self.__rm.open_resource(self.rid)
-
-            # set resource parameters
-            for param, val in self.__resource_params.items():
-                setattr(self.__inst, param, val)
-
-        else:
-            self.__inst.open()
-        if explicit_remote is False:
-            self.id  # place instrument in remote control
-        else:
-            self._write(explicit_remote)
 
     def disconnect(self):
         """
@@ -435,6 +417,25 @@ class SCPI_Instrument:
             )
         r_name = matches[0].group(0)
         return r_name
+
+    ## Dardo edits
+    def connect(self, explicit_remote=False):
+        """
+        Connects to the instrument on the given port.
+        """
+        if not self.rid:
+            raise RuntimeError("Can not connect. No resource id provided.")
+        if self.__inst is None:
+            self.__inst = self.__rm.open_resource(self.rid)
+            # set resource parameters
+            for param, val in self.__resource_params.items():
+                setattr(self.__inst, param, val)
+        else:
+            self.__inst.open()
+        if explicit_remote is False:
+            self.id  # place instrument in remote control
+        else:
+            self._write(explicit_remote)
 
     def read_raw(self, *args, **kwargs):
         if not self.is_message_based():

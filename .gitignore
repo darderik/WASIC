@@ -3,3 +3,7 @@
 data/charts/*
 data/charts/backups/*
 data/instruments.json
+*.pyc
+__pycache__
+*.pyo
+*.pyd

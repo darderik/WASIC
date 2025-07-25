@@ -88,10 +88,6 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
     ):
         return
 
-    # Start data processing in a background thread
-    data_thread: Thread = spawn_data_processor(data, exit_flag, generic_processor)
-    data_thread.start()
-
     # Get SCPI instrument objects
     relay_matrix: RelayMatrix = relay_entry.scpi_instrument
     k2000: K2000 = k2000_entry.scpi_instrument

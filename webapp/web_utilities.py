@@ -8,10 +8,12 @@ import plotly.express as px
 
 def make_plotly_figure(chart_data: ChartData):
     if chart_data.custom_type in ("", "scatter"):
+        local_y = deepcopy(chart_data.y)
+
         df = pd.DataFrame(
             {
-                "x": chart_data.x or list(range(len(chart_data.y))),
-                "y": chart_data.y,
+                "x": chart_data.x[0 : len(local_y)],
+                "y": local_y,
             }
         )
         return px.scatter(

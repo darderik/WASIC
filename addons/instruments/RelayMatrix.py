@@ -48,15 +48,28 @@ class RelayMatrix(Instrument):
             port=scpi_info.port,
             timeout=5000,
             baud_rate=scpi_info.baud_rate,
-            handshake=True,
+            handshake=False,
             write_termination="\n",
             read_termination="\n",
             backend=kwargs.get("backend", "@py"),
             encoding="ascii",
         )
-        self.__child_lock = threading.RLock()
+        self._child_lock = threading.RLock()
         self.properties_list: List[property_info] = []  # No properties
+        self.sleep_after_write=100e-3  # 100 ms delay after write to avoid overloading the relay matrix
 
+    def write(self, command: str) -> None:
+        """Override Instrument.write to add a small delay after each write.
+
+        Calls the parent implementation and then sleeps for self.sleep_after_write.
+        """
+        # Call the base class write implementation
+        with self._child_lock:
+            super().write(command)
+            time.sleep(self.sleep_after_write)
+    def query(self, msg):
+        with self._child_lock:
+            return super().query(msg)
     def opc(self) -> None:
         """
         Waits for the operation to complete.
@@ -75,6 +88,7 @@ class RelayMatrix(Instrument):
         """
         command = f"switch:commute {' '.join(relays)}"
         self.write(command)
+        self.opc()
 
     def switch_commute_reset(self, *relays: str) -> None:
         """
@@ -87,12 +101,14 @@ class RelayMatrix(Instrument):
         """
         command = f"switch:commute:reset {' '.join(relays)}"
         self.write(command)
+        self.opc()
 
     def switch_commute_reset_all(self) -> None:
         """
         Resets all relays in the matrix, regardless of group or number.
         """
         self.write("switch:commute:reset:all")
+        self.opc()
 
     def switch_commute_exclusive(self, *relays: str) -> None:
         """
@@ -105,6 +121,7 @@ class RelayMatrix(Instrument):
         """
         command = f"switch:commute:exclusive {' '.join(relays)}"
         self.write(command)
+        self.opc()
 
     def get_system_log(self) -> str:
         """

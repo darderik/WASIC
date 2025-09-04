@@ -58,7 +58,7 @@ class NV34420(Instrument):
             backend=kwargs.get("backend", ""),
             encoding="latin-1",
         )
-        self.connect(explicit_remote="SYSTEM:REMOTE")
+        self.connect(explicit_remote=1)
         self.disable_beep()
         self.init_properties()
 
@@ -142,11 +142,13 @@ class NV34420(Instrument):
         Returns
         -------
         float
-            Measured voltage value.
+            Measured voltage value or NaN on error.
         """
-        self.write(":CONF:VOLT")
-        response = self.query(":READ?")
-        return float(response)
+        try:
+            self.write(":CONF:VOLT")
+            return self.read_meas()
+        except Exception:
+            return float('nan')
 
     def measure_resistance(self) -> float:
         """
@@ -155,15 +157,21 @@ class NV34420(Instrument):
         Returns
         -------
         float
-            Measured resistance value.
+            Measured resistance value or NaN on error.
         """
-        self.write(":CONF:FRES")
-        response = self.query(":READ?")
-        return float(response)
+        try:
+            self.write(":CONF:FRES")
+            return self.read_meas()
+        except Exception:
+            return float('nan')
 
     def read_meas(self) -> float:
-        result: str = self.query(":READ?")
-        return float(result)
+        try:
+            result: str = self.query(":READ?")
+            return float(result)
+        except Exception:
+            # Return NaN if the read fails or the response cannot be parsed
+            return float('nan')
 
     def configure_resistance(
         self,

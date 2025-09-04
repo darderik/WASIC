@@ -1,7 +1,9 @@
 import os
+from streamlit import connection
 import streamlit.web.bootstrap
 import logging
 from config import Config
+from connections.utilities import detect_baud_rate
 from tasks import Tasks
 from connections import Connections
 
@@ -25,22 +27,17 @@ def main():
         level=Config().get("log_level", "NOTSET"),
         handlers=[file_handler, stream_handler],
     )
-    logging.basicConfig(
-        level=logging.DEBUG,
-    )
     logging.info("Starting WASIC...")
 
     # Streamlit boot
     script_path = os.path.abspath("streamlit_app.py")
-    logging.basicConfig(level="INFO")
     # New thread test function
     # Create and start a new thread to run test_function
-    test_thread = threading.Thread(target=test_function, daemon=True)
-
     #    test_thread.start()
-
+    #detect_baud_rate("COM10")
+    Connections().fetch_all_instruments()
+    Tasks().run_task("Anisotropy Meas SM2401+34420+2RM")
     streamlit.web.bootstrap.run(script_path, False, [], {})
-
 
 if __name__ == "__main__":
     main()

@@ -1,3 +1,4 @@
+from math import e
 from easy_scpi import Instrument
 from config import Config
 from typing import List, Callable, Dict, Any, Optional

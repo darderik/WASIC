@@ -55,6 +55,7 @@ class SM2401(Instrument):
             write_termination="\n",
             timeout=5000,
             backend=kwargs.get("backend", "@py"),
+            encoding ="latin-1",
         )
         self.connect()
         # (Optional) Perform any initial configuration, e.g., disable beeps
@@ -189,17 +190,30 @@ class SM2401(Instrument):
         else:
             raise ValueError("Unknown mode.")
 
-    def configure_current_source(self, current: float, compliance: float) -> None:
+    def configure_current_source(self, current: float, compliance: float = 0) -> None:
         self.source_mode = "CURR"
-        self.compliance = compliance
+        if (compliance != 0):
+            self.compliance = compliance
         self.current = current
-
-    def configure_current_measure(self, nplc: float) -> None:
+    def opc(self):
+        resp = self.query("*OPC?")
+        return resp
+    def configure_current_measure(self, nplc: float, autorange:bool =True) -> None:
         self.write(f":SENS:CURR:NPLC {nplc}")
+        if autorange:
+            self.write(":SENS:CURR:RANG:AUTO ON")
+        else:
+            self.write(":SENS:CURR:RANG:AUTO OFF")
+        self.write(":FORMAT:ELEM CURR")
         self.write(":CONF:CURR")
 
-    def configure_voltage_measure(self, nplc: float) -> None:
+    def configure_voltage_measure(self, nplc: float, autorange:bool =True) -> None:
         self.write(f":SENS:VOLT:NPLC {nplc}")
+        if autorange:
+            self.write(":SENS:VOLT:RANG:AUTO ON")
+        else:
+            self.write(":SENS:VOLT:RANG:AUTO OFF")
+        self.write(":FORMAT:ELEM VOLT")
         self.write(":CONF:VOLT")
 
     def measure_voltage(self) -> float:
@@ -237,12 +251,14 @@ class SM2401(Instrument):
         Turns on the device output.
         """
         self.write(":OUTP ON")
+        self.opc()
 
     def output_off(self) -> None:
         """
         Turns off the device output.
         """
         self.write(":OUTP OFF")
+        self.opc()
 
 
 # Append to register the instrument class with its alias

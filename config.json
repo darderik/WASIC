@@ -5,7 +5,8 @@
         "Relay Matrix",
         "34420A",
         "TDS 2012",
-        "TBS1052C"
+        "TBS1052C",
+        "2401"
     ],
     "communication_mode": "pyvisa",
     "instrument_connections_datapath": "data\\instr\\instruments.json",

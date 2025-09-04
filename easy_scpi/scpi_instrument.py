@@ -419,7 +419,7 @@ class SCPI_Instrument:
         return r_name
 
     ## Dardo edits
-    def connect(self, explicit_remote=False):
+    def connect(self, explicit_remote:int = 0):
         """
         Connects to the instrument on the given port.
         """
@@ -432,11 +432,11 @@ class SCPI_Instrument:
                 setattr(self.__inst, param, val)
         else:
             self.__inst.open()
-        if explicit_remote is False:
-            self.id  # place instrument in remote control
-        else:
-            self._write(explicit_remote)
-
+        if explicit_remote == 0:
+            self.id
+        elif explicit_remote == 1:
+            self.write(":SYST:REM")
+            
     def read_raw(self, *args, **kwargs):
         if not self.is_message_based():
             raise RuntimeError("read_raw is not supported for this resource type")

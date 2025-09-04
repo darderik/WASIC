@@ -190,7 +190,8 @@ class Connections:
             for usb_instr in (
                 x
                 for x in all_usb_instruments
-                if x not in locked_ports and "ASRL" not in x
+                if x not in locked_ports
+                # and "ASRL" not in x
             ):
                 self._process_usb_instrument(usb_instr)
 
@@ -207,23 +208,17 @@ class Connections:
                 write_terminator="\n",
                 read_terminator="\n",
             )
-            # prepare for comm error and retry 5 times
-            id_str = ""
-            for _ in range(5):
-                try:
-                    cur_instr.connect()
-                    id_str = cur_instr.id
-                    if id_str:
-                        break
-                # Temporary VI_ERROR_INP_PROT_VIOLATION error
-                except Exception as e:
-                    logger.warning(
-                        f"Protocol error: |{e}| while trying to read IDN from {usb_instr}. Retrying..."
+            try:
+                cur_instr.connect()
+                id_str = cur_instr.id
+                if not id_str:
+                    logger.error(
+                        f"Failed to read IDN from {usb_instr} on first attempt. Skipping..."
                     )
-                    time.sleep(0.5)
-            if id_str == "":
+                    return
+            except Exception as e:
                 logger.error(
-                    f"Failed to read IDN from {usb_instr} after 5 attempts. Skipping..."
+                    f"Protocol error: |{e}| while trying to read IDN from {usb_instr}. Skipping..."
                 )
                 return
             alias = is_instrument_in_aliases(idn=id_str)

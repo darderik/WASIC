@@ -1,3 +1,4 @@
+from threading import local
 from tasks import ChartData
 from streamlit.delta_generator import DeltaGenerator
 from pandas import DataFrame
@@ -9,13 +10,23 @@ import plotly.express as px
 def make_plotly_figure(chart_data: ChartData):
     if chart_data.custom_type in ("", "scatter"):
         local_y = deepcopy(chart_data.y)
-
-        df = pd.DataFrame(
-            {
-                "x": chart_data.x[0 : len(local_y)],
-                "y": local_y,
-            }
-        )
+        local_x = deepcopy(chart_data.x)
+        if (len(local_x)==0):# X axis is just an index
+            local_x = list(range(len(local_y)))
+            df = pd.DataFrame(
+                {
+                    "x": local_x,
+                    "y": local_y,
+                }
+            )
+        else:
+            min_len = min(len(local_x), len(local_y))
+            df = pd.DataFrame(
+                {
+                    "x": local_x[:min_len],
+                    "y": local_y[:min_len],
+                }
+            )
         return px.scatter(
             df,
             x="x",

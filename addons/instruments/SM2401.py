@@ -54,7 +54,7 @@ class SM2401(Instrument):
             read_termination="\n",
             write_termination="\n",
             timeout=5000,
-            backend=kwargs.get("backend", "@py"),
+            backend="@py",
             encoding ="latin-1",
         )
         self.connect()

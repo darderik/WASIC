@@ -55,7 +55,7 @@ class NV34420(Instrument):
             write_termination="\n",
             stop_bits=StopBits.two,
             timeout=5000,
-            backend=kwargs.get("backend", ""),
+            backend="@py",
             encoding="latin-1",
         )
         self.connect(explicit_remote=1)

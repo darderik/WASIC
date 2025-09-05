@@ -7,3 +7,4 @@ data/instruments.json
 __pycache__
 *.pyo
 *.pyd
+*.tmp

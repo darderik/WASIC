@@ -48,10 +48,10 @@ class RelayMatrix(Instrument):
             port=scpi_info.port,
             timeout=5000,
             baud_rate=scpi_info.baud_rate,
-            handshake=False,
+            handshake=True,
             write_termination="\n",
             read_termination="\n",
-            backend=kwargs.get("backend", "@py"),
+            backend="@py",
             encoding="ascii",
         )
         self._child_lock = threading.RLock()

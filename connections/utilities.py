@@ -26,7 +26,7 @@ import pyvisa
 import os
 import json
 import tempfile
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Any
 from config import Config
 from threading import Lock
 import logging
@@ -35,7 +35,9 @@ from pyvisa.constants import StopBits
 from easy_scpi.scpi_instrument import SCPI_Instrument
 
 logger = logging.getLogger(__name__)
-DEFAULT_TIMEOUT = 0.5  # seconds (faster; devices are \n-terminated)
+DEFAULT_TIMEOUT = 0.8  # seconds (faster; devices are \n-terminated)
+HANDSHAKE_TOKENS = {"ok", "ready"}
+
 BAUDRATES = (
     110,
     300,
@@ -119,7 +121,11 @@ def _reset_failure_count(port: str) -> None:
 
 
 def save_serial_params(port: str, baud_rate: int, stop_bits: StopBits) -> None:
-    """Save the successful serial parameters for a port into a temp JSON file."""
+    """Save the successful serial parameters for a port into a temp JSON file.
+
+    Handshake/banner lines are treated as startup noise and are NOT stored as a
+    runtime handshake requirement (previous logic removed to avoid false positives).
+    """
     try:
         cache = _read_serial_cache()
         key = str(port).upper()
@@ -138,33 +144,180 @@ def save_serial_params(port: str, baud_rate: int, stop_bits: StopBits) -> None:
         pass
 
 
-def load_serial_params(port: str) -> Optional[Tuple[int, StopBits]]:
-    """Load cached params for a port. Returns (baud_rate, StopBits) or None."""
+def load_serial_params(port: str) -> Optional[Tuple[int, StopBits, str]]:
+    """Load cached params for a port. Returns (baud_rate, StopBits, id_string) or None.
+
+    Procedure (no command echo expected):
+      1. Connect with cached params.
+      2. Drain any immediate incoming lines (noise, banners, "ok", "ready").
+      3. Issue *IDN? explicitly.
+      4. Read several lines, skipping empty and handshake tokens.
+      5. First validated remaining line becomes the ID string.
+    If no valid line is found the cache entry is ignored.
+    """
     try:
         cache = _read_serial_cache()
         key = str(port).upper()
         entry = cache.get(key)
         if not entry:
             return None
-        # Respect blacklist: do not return params if port is blacklisted
         if entry.get("blacklisted"):
             logger.debug("Port %s is blacklisted (skipping cached params)", key)
             return None
         baud = int(entry.get("baud_rate"))
         sb = entry.get("stop_bits")
-        # Convert back to StopBits when possible
+        if baud is None or sb is None:
+            return None
         try:
             stopbits = StopBits[sb]
         except Exception:
-            # Fallback: try numeric value
             try:
                 stopbits = StopBits(int(sb))
             except Exception:
                 stopbits = StopBits.one
-        return (baud, stopbits)
+        inst: Optional[SCPI_Instrument] = None
+        try:
+            inst = SCPI_Instrument(
+                port=port,
+                baud_rate=baud,
+                data_bits=8,
+                stop_bits=stopbits,
+                timeout=int(0.5 * 1000),
+                read_termination="\n",
+                write_termination="\n",
+                encoding="ascii",
+                backend="@py"
+            )
+            inst.connect(2)
+            if inst.instrument is not None:
+                original_timeout = inst.instrument.timeout
+                try:
+                    inst.instrument.timeout = 100
+                    while True:
+                        try:
+                            line = inst.read()
+                        except pyvisa.errors.VisaIOError:
+                            break
+                        except Exception:
+                            break
+                        line_s = str(line).strip()
+                        if not line_s:
+                            continue
+                        if line_s.lower() in HANDSHAKE_TOKENS:
+                            continue
+                finally:
+                    if inst.instrument is not None:
+                        inst.instrument.timeout = original_timeout
+            try:
+                inst.write("*IDN?")
+            except Exception:
+                raise
+            idn_line: Optional[str] = None
+            for _ in range(5):
+                try:
+                    resp = inst.read()
+                except pyvisa.errors.VisaIOError:
+                    break
+                except Exception:
+                    break
+                resp_s = str(resp).strip()
+                if not resp_s:
+                    continue
+                if resp_s.lower() in HANDSHAKE_TOKENS:
+                    continue
+                if validate_response(resp_s):
+                    idn_line = "".join(c for c in resp_s if c in string.printable)
+                    break
+            if idn_line:
+                inst.disconnect()
+                return (baud, stopbits, idn_line)
+            # fallback single query
+            try:
+                alt = inst.query("*IDN?")
+                alt_s = str(alt).strip()
+                if alt_s and alt_s.lower() not in HANDSHAKE_TOKENS and validate_response(alt_s):
+                    alt_idn = "".join(c for c in alt_s if c in string.printable)
+                    inst.disconnect()
+                    return (baud, stopbits, alt_idn)
+            except Exception:
+                pass
+            inst.disconnect()
+            return None
+        except Exception:
+            try:
+                if inst is not None and inst.is_connected:
+                    inst.disconnect()
+            except Exception:
+                pass
+            return None
     except Exception:
         return None
 
+
+# ---------------------- Internal helper utilities ---------------------- #
+
+def _build_resource_name(port: Any) -> str:
+    """Return VISA-style resource name for logging (does not validate)."""
+    p = str(port).upper()
+    if p.startswith("COM"):
+        digits = "".join(c for c in p if c.isdigit())
+        return f"ASRL{digits}::INSTR"
+    return str(port)
+
+def _prepare_query_cmd(data: Any) -> str:
+    if data is None:
+        return "*IDN?"
+    if isinstance(data, bytes):
+        try:
+            return data.decode().strip() or "*IDN?"
+        except Exception:
+            return "*IDN?"
+    return str(data)
+
+def _drain(inst: SCPI_Instrument, timeout_ms: int, max_reads: int | None = None) -> None:
+    """Drain any pending lines from the instrument.
+
+    timeout_ms: temporary timeout used while draining.
+    max_reads: number of successful reads to attempt (None = until timeout).
+    """
+    if inst.instrument is None:
+        return
+    old_timeout = getattr(inst.instrument, "timeout", None)
+    try:
+        inst.instrument.timeout = timeout_ms
+        reads = 0
+        while True:
+            if max_reads is not None and reads >= max_reads:
+                break
+            try:
+                _ = inst.read()
+                reads += 1
+            except pyvisa.errors.VisaIOError:
+                break
+            except Exception:
+                break
+    finally:
+        if old_timeout is not None and inst.instrument is not None:
+            inst.instrument.timeout = old_timeout
+
+def _safe_clear(inst: SCPI_Instrument, resource_name: str, baudrate: int, print_all: bool) -> None:
+    if inst.instrument is None:
+        return
+    try:
+        if hasattr(inst.instrument, "clear"):
+            try:
+                inst.instrument.clear()  # type: ignore[attr-defined]
+            except pyvisa.errors.VisaIOError:
+                pass
+        try:
+            inst.write("*CLS")
+        except Exception:
+            pass
+    except Exception as e:
+        if print_all:
+            logger.debug("clear/*CLS failed for %s at %s: %s", resource_name, baudrate, e)
+
+# ---------------------- Public API ---------------------- #
 
 def detect_baud_rate(
     port,
@@ -172,85 +325,25 @@ def detect_baud_rate(
     timeout: float = DEFAULT_TIMEOUT,
     scan_all: bool = False,
     print_all: bool = False,
+    clear_on_connect: bool = True,
 ) -> Tuple[int, str] | None:
-    """Try to detect a device baud rate using easy_scpi.SCPI_Instrument.
+    """Detect baud rate for a serial instrument.
 
-    Optimized for serial instruments using \n termination. Tries 1 and 2 stop bits
-    and returns (baudrate, idn_string) on success.
+    Tries common baud rates (or all if scan_all) and both 1 / 2 stop bits.
+    Returns (baudrate, idn_string) or None on failure.
+    Uses easy_scpi for a slightly higher-level & thread-safe wrapper.
     """
-    # Favor common/fast first; fall back to the rest (kept for scan_all)
-    fast_order = ( 9600, 19200, 115200,)
+    fast_order = (9600, 115200,19200, )
     baudrates = BAUDRATES if scan_all else fast_order
-
-    # Prepare query string
-    if data is None:
-        query_cmd = "*IDN?"
-    elif isinstance(data, bytes):
-        try:
-            query_cmd = data.decode().strip()
-        except Exception:
-            query_cmd = "*IDN?"
-    else:
-        query_cmd = str(data)
-
-    # Convert port like 'COM3' -> ASRL resource name (for logging only)
-    port_upper = str(port).upper()
-    if port_upper.startswith("COM"):
-        digits = "".join([c for c in port_upper if c.isdigit()])
-        resource_name = f"ASRL{digits}::INSTR"
-    else:
-        resource_name = port
-
-    # If we have cached params for this port, try them first and exit early on success.
-    try:
-        cached = load_serial_params(port)
-        if cached is not None:
-            cached_baud, cached_stopbits = cached
-            logger.debug("Found cached serial params for %s: %s %s", resource_name, cached_baud, cached_stopbits)
-            try:
-                inst = SCPI_Instrument(
-                    port=port,
-                    baud_rate=cached_baud,
-                    data_bits=8,
-                    stop_bits=cached_stopbits,
-                    timeout=int(timeout * 1000),
-                    read_termination="\n",
-                    write_termination="\n",
-                    encoding="ascii",
-                )
-                inst.connect(explicit_remote=2)
-                try:
-                    first = inst.query(query_cmd)
-                    first_stripped = str(first).strip()
-                    logger.debug(
-                        "Cached attempt received response from %s at %s: '%s'", resource_name, cached_baud, first_stripped
-                    )
-                    if first_stripped and first_stripped.lower() not in {"ok", "ready"} and validate_response(first):
-                        current_idn = "".join(c for c in first_stripped if c in string.printable)
-                        # Save again to refresh timestamp and exit early
-                        save_serial_params(port, cached_baud, cached_stopbits)
-                        try:
-                            if inst is not None and inst.is_connected:
-                                inst.disconnect()
-                        except Exception:
-                            pass
-                        return (cached_baud, current_idn)
-                except Exception:
-                    # Cached params not valid; fall through to scanning
-                    logger.debug("Cached serial params for %s did not work; falling back", resource_name)
-                finally:
-                    try:
-                        if inst is not None and inst.is_connected:
-                            inst.disconnect()
-                    except Exception:
-                        pass
-            except Exception:
-                # Could not open with cached params; continue to full scan
-                logger.debug("Could not open %s with cached params; will scan", resource_name)
-    except Exception:
-        # Ignore cache errors and continue
-        pass
-
+    # Check if  cached
+    cached = load_serial_params(port)
+    if cached is not None:
+        logger.debug("Using cached serial params for port %s: %s", port, cached)
+        baud, sb, idn = cached
+        return (baud, idn)
+    # No cache, iterate
+    query_cmd = _prepare_query_cmd(data)
+    resource_name = _build_resource_name(port)
     stopbits_to_try = [StopBits.one, StopBits.two]
 
     for baudrate in baudrates:
@@ -261,44 +354,27 @@ def detect_baud_rate(
                 resource_name,
                 stopbits,
             )
+            time.sleep(0.1)  # brief pause between attempts
             inst: Optional[SCPI_Instrument] = None
             try:
-                # Build instrument with desired serial params; easy_scpi forwards these
                 inst = SCPI_Instrument(
                     port=port,
-                    # ensure params are applied before first query in connect()
                     baud_rate=baudrate,
                     data_bits=8,
                     stop_bits=stopbits,
-                    timeout=int(timeout * 1000),  # ms
+                    timeout=int(timeout * 1000),
                     read_termination="\n",
                     write_termination="\n",
                     encoding="ascii",
+                    backend="@py"
                 )
-                inst.connect(explicit_remote=2)  # no cmd
+                inst.connect(2)  # performs implicit *IDN?
 
-                # Force a resource clear to recover from possible corrupted state
-                try:
-                    if inst.instrument is not None and hasattr(inst.instrument, "clear"):
-                        try:
-                            inst.instrument.clear()
-                        except pyvisa.errors.VisaIOError:
-                            pass
-                    time.sleep(0.1)
-                    # Best-effort SCPI status clear (ignored if unsupported)
-                    try:
-                        inst.write(":SYST:REM")
-                        inst.write("*CLS")
-                        inst.query("*OPC?")
-                    except Exception:
-                        pass
-                except Exception as e:
-                    if print_all:
-                        logger.debug(
-                            "clear/*CLS failed for %s at %s: %s", resource_name, baudrate, e
-                        )
+                if clear_on_connect:
+                    _safe_clear(inst, resource_name, baudrate, print_all)
+                time.sleep(0.1)  # brief pause between attempts
 
-                # Issue query; with proper termination this should be a single read
+                # Issue our detection query
                 try:
                     first = inst.query(query_cmd)
                 except Exception as e:
@@ -310,37 +386,51 @@ def detect_baud_rate(
                     )
                     continue
 
-                # Fast path: if not a handshake token and looks valid, accept
                 first_stripped = str(first).strip()
                 logger.debug(
-                    "Received response from %s at %s: '%s'", resource_name, baudrate, first_stripped
+                    "Received response from %s at %s: '%s'",
+                    resource_name,
+                    baudrate,
+                    first_stripped,
                 )
-                if first_stripped and first_stripped.lower() not in {"ok", "ready"} and validate_response(first):
+                if (
+                    first_stripped
+                    and first_stripped.lower() not in HANDSHAKE_TOKENS
+                    and validate_response(first)
+                ):
                     current_idn = "".join(c for c in first_stripped if c in string.printable)
-                    # Save successful params to cache for next time
-                    try:
-                        save_serial_params(port, baudrate, stopbits)
-                    except Exception:
-                        pass
+                    save_serial_params(port, baudrate, stopbits)
                     return (baudrate, current_idn)
+
+                # Handshake token path: attempt a few more lines quickly
+                for _ in range(3):
+                    try:
+                        nxt = inst.read()
+                    except pyvisa.errors.VisaIOError:
+                        break
+                    nxt_s = str(nxt).strip()
+                    if not nxt_s:
+                        continue
+                    if nxt_s.lower() in HANDSHAKE_TOKENS:
+                        continue
+                    if validate_response(nxt):
+                        current_idn = "".join(c for c in nxt_s if c in string.printable)
+                        # previously stored handshake=True; removed (banner is transient)
+                        save_serial_params(port, baudrate, stopbits)
+                        return (baudrate, current_idn)
+
             except Exception as e:
                 if print_all:
-                    logger.debug(
-                        "Exception for %s at %s: %s", resource_name, baudrate, e
-                    )
+                    logger.debug("Exception for %s at %s: %s", resource_name, baudrate, e)
             finally:
                 try:
                     if inst is not None and inst.is_connected:
                         inst.disconnect()
                 except Exception:
                     pass
-            # Very short pause before next try (preserve original timing)
-    # All attempts failed -> increment failure count and potentially blacklist the port
+    # All attempts failed: record a failure count (may lead to blacklist)
     try:
-        failures = _increment_failure_count(port)
-        logger.debug("Detection failed for %s; failure count=%s", resource_name, failures)
-        if failures >= BLACKLIST_THRESHOLD:
-            logger.debug("Port %s blacklisted after %s failures", resource_name, failures)
+        _increment_failure_count(port)
     except Exception:
         pass
     return None

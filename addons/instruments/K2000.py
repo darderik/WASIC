@@ -48,7 +48,7 @@ class K2000(Instrument):
             read_termination="\n",
             write_termination="\n",
             timeout=5000,
-            backend=kwargs.get("backend", ""),
+            backend="@py",
         )
         self.connect()
         self.disable_beep()

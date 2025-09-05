@@ -13,7 +13,10 @@ from connections.utilities import detect_baud_rate
 def test_function():
     # Open serial port com4
     logging.basicConfig(level=logging.DEBUG)
-
-    detect_baud_rate("COM6")
-
+    for i in range(1, 11):
+        if detect_baud_rate("COM6",timeout=3) is not None:
+            print(f"Found device on COM6 at iteration {i}")
+    
+def relay_matrix_stress_test():
+    test_function()
 test_function()

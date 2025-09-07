@@ -1,8 +1,10 @@
-from typing import List
+from typing import List, Any, TypeVar, Optional, overload
 from enum import Enum
 from threading import RLock
 import json
 import logging
+
+T = TypeVar("T")
 
 default_config = {
     "instr_aliases": ["Raspberry", "Model 2000", "Relay Matrix"],
@@ -23,9 +25,9 @@ logger = logging.getLogger(__name__)
 class Config:
     _lock = RLock()
     _instance = None
-    _data: dict = {}
+    _data: dict[str, Any] = {}
 
-    def __new__(cls, config_path="config.json"):
+    def __new__(cls, config_path: str = "config.json") -> "Config":
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
@@ -65,7 +67,15 @@ class Config:
         logger.debug(f"Adding instrument extension: {instr_extension}")
         self._data["instruments_extensions"].append(instr_extension)
 
-    def get(self, key, default=None):
+    @overload
+    def get(self, key: str) -> Any:
+        ...
+
+    @overload
+    def get(self, key: str, default: T) -> T:
+        ...
+
+    def get(self, key: str, default: Any = None) -> Any:
         """
         Retrieves the value for the specified configuration key.
 

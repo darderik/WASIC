@@ -59,6 +59,7 @@ class NV34420(Instrument):
             encoding="latin-1",
         )
         self.connect(explicit_remote=1)
+        self.reset()
         self.disable_beep()
         self.init_properties()
 

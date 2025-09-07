@@ -27,10 +27,11 @@ class Task:
         name: str,
         description: str,
         instrs_aliases: List[str],
-        function: Callable[[List[ChartData], Event], None],
+        function: Callable[["Task"], None],
         data: Optional[List[ChartData]] = None,
         custom_alias: str = "",
         custom_web_status: Optional[Callable] = None,
+        parameters: Optional[Dict[str, Any]] = None,
     ):
         self.name = name
         self.description = description
@@ -43,6 +44,7 @@ class Task:
         self._config = Config()
         self.custom_web_status = custom_web_status
         self.thread_handle: Optional[Thread] = None
+        self.parameters: Dict[str, Any] = parameters if parameters is not None else {}
 
     def start(self) -> None:
         """Starts the task's function in a new non-blocking thread if not already running."""
@@ -50,7 +52,7 @@ class Task:
             self.exit_flag.clear()
             # Task thread
             self.thread_handle = Thread(
-                target=self.function, args=(self.data, self.exit_flag)
+                target=self.function, args=(self,)
             )
             self.thread_handle.start()
             # Data processor thread
@@ -111,16 +113,16 @@ class Task:
             self.custom_alias = "anonymous"
         for chart in self.data:
             file_name = f"{chart.name}_{self.custom_alias}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"
-            file_path = os.path.join(self._config.get("data_charts_path"), file_name)
+            file_path = os.path.join(Config().get("data_charts_path"), file_name)
             self.write_chart_to_json(chart, file_path)
 
     def backup_saver(self):
         try:
             # Flag check
-            if not Config().get("backup_switch", False):
+            if not Config().get("backup_switch", True):
                 return
             date: str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            sleep_time: float = Config().get("backup_schedule")
+            sleep_time: float = Config().get("backup_schedule", 60.0)
             file_path: str = (
                 self._config.get("data_charts_path")
                 + "\\"

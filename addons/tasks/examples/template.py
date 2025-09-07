@@ -1,6 +1,6 @@
 from tasks import Task, Tasks, ChartData
 import random
-from typing import Optional, List
+from typing import Optional, List, cast
 from instruments import Instrument_Entry
 from connections import Connections
 from ...instruments import RaspberrySIM
@@ -16,8 +16,10 @@ def example_math_formula(x: float) -> float:
     return math.sqrt(x)
 
 
-def mytask_1(data: List[ChartData], exit_flag: Event) -> None:
+def mytask_1(task_obj: Task) -> None:
     """Main function for My Task 1."""
+    data = task_obj.data
+    exit_flag = task_obj.exit_flag
     # Setup Data
     cur_chart_data_1: ChartData = ChartData(
         name="Square root of values", math_formula_y=example_math_formula
@@ -31,7 +33,7 @@ def mytask_1(data: List[ChartData], exit_flag: Event) -> None:
         "raspberry"
     )  # May also use serial number
     if instr_entry is not None:
-        myInstrument: RaspberrySIM = instr_entry.scpi_instrument
+        myInstrument: RaspberrySIM = cast(RaspberrySIM, instr_entry.scpi_instrument)
     else:
         logger.error("Instrument not found")
         exit_flag.set()
@@ -47,8 +49,6 @@ def mytask_1(data: List[ChartData], exit_flag: Event) -> None:
         logger.error(f"Error in task: {e}")
     finally:
         exit_flag.set()
-        newThreadProcessor.join()
-
 
 def init_mytask_1() -> None:
     """Initialize My Task 1 by creating and adding it to the tasks list."""

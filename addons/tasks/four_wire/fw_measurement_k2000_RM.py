@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, cast
 from threading import Thread, Event
 import time
 import sympy as sp
@@ -12,7 +12,7 @@ from addons.tasks.utilities import spawn_data_processor, generic_processor
 from connections import Connections
 
 
-def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
+def meas_4w_vdp(task_obj: Task) -> None:
     """
     Performs a Van der Pauw measurement task, measuring horizontal and vertical resistances
     using preconfigured instruments and updating the relevant ChartData objects with these
@@ -39,6 +39,8 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
            thread is properly joined before returning.
     """
     """Van der Pauw measurement task."""
+    data = task_obj.data
+    exit_flag = task_obj.exit_flag
     horizontal_resistance_chart: ChartData = ChartData(
         name="Horizontal Resistance",
         y_label="Resistance (Ohm)",
@@ -73,8 +75,8 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
 
     if relay_matrix_entry is None or k2000_entry is None:
         return
-    relay_matrix: RelayMatrix = relay_matrix_entry.scpi_instrument
-    k2000: K2000 = k2000_entry.scpi_instrument
+    relay_matrix: RelayMatrix = cast(RelayMatrix, relay_matrix_entry.scpi_instrument)
+    k2000: K2000 = cast(K2000, k2000_entry.scpi_instrument)
 
     # Configure Instruments
     k2000.disable_beep()
@@ -100,10 +102,6 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
         vdp_sheet_resistance_chart.raw_y.append(
             [horizontal_resistance, vertical_resistance]
         )
-        if exit_flag.is_set():
-            newThreadProcessor.join()
-            break  # Exit the loop if the exit flag is set
-
         time.sleep(0.1)
 
 
@@ -111,8 +109,8 @@ def van_der_pauw_calculation(hor_ver_resistance: List[float]) -> float:
     """Calculate the sheet resistance of a sample using the Van der Pauw method."""
     horizontal_resistance, vertical_resistance = hor_ver_resistance
     R_s = sp.Symbol("R_s")  # Sheet resistance
-    R_h: float = abs(horizontal_resistance)
-    R_v: float = abs(vertical_resistance)
+    R_h = sp.Symbol("R_h", real=True, positive=True)
+    R_v = sp.Symbol("R_v", real=True, positive=True)
     vdp_equation = sp.Eq(sp.exp(-sp.pi * R_h / R_s) + sp.exp(-sp.pi * R_v / R_s) - 1, 0)
     vdp_numeric_equation = sp.lambdify(R_s, vdp_equation.lhs, modules="numpy")
     try:

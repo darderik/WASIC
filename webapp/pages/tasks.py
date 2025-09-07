@@ -51,15 +51,13 @@ def chart_update_frag(
 # Check if a task is currently running
 is_task_running: bool = tasks_obj._is_running is not None
 
-# Set the main title of the page
-st.title("🔧 Tasks Selector")
-
-# Task selection widget
+# Set the main title of the page with a container for better spacing
 with st.container():
+    st.title("🔧 Tasks Selector")
     if not is_task_running:
         st.markdown("### 🎯 Select and Run a Task")
     else:
-        st.success("✅ Task is currently running")
+        st.success("✅ Task is currently running", icon="✨")
 
     col_task, col_run = st.columns([3, 1])
 
@@ -102,9 +100,8 @@ with st.container():
                 key="refresh_matched_instruments",
                 help="Refresh each task's matched instruments.",
                 use_container_width=True,
-            )
-
-# Display task details and controls if a task is running
+                type="secondary"
+            )# Display task details and controls if a task is running
 if is_task_running and tasks_obj._is_running is not None:
     cur_task: Task = tasks_obj._is_running
 
@@ -131,17 +128,30 @@ if is_task_running and tasks_obj._is_running is not None:
 
     # Task Controls Section
     st.markdown("### 🎛️ Task Controls")
+
+    if cur_task.parameters:
+        st.markdown("---")
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            with st.expander("⚙️ Edit Task Parameters", expanded=True):
+                # Display dictionary in an editable format using st.data_editor
+                parameters_dict = cur_task.parameters or {}
+                st.markdown("##### Parameters")
+                edited_parameters = st.data_editor(
+                    parameters_dict,
+                    key=f"params_{cur_task.name}",
+                    use_container_width=True,
+                    num_rows="dynamic"
+                )
+                # Add an update parameters button
+                if st.button("🔄 Update Parameters", help="Apply changes to task parameters", use_container_width=True, type="secondary"):
+                    if edited_parameters != parameters_dict:
+                        cur_task.parameters = edited_parameters
+                        st.success("✅ Parameters updated successfully!", icon="✨")
+        st.markdown("---")
+
     col_alias, col_stop = st.columns([2, 1])
 
-    with col_alias:
-        custom_alias: str = st.text_input(
-            label="💾 Task Alias",
-            value="",
-            key="task_alias",
-            help="Enter an alias for this task run (used for saving data)",
-            on_change=set_custom_alias,
-            placeholder="Enter a meaningful name...",
-        )
 
     with col_stop:
         st.markdown("")  # Add spacing to align with text input

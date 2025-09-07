@@ -99,14 +99,17 @@ class K2000(Instrument):
         """
         Returns the auto range setting for DC voltage measurement.
         """
-        return helper_methods.val_to_bool(int(self.query(":SENS:VOLT:DC:RANGE:AUTO?")))
+        resp = self.query(":SENS:VOLT:DC:RANGE:AUTO?")
+        return helper_methods.val_to_bool(resp)
 
     @autorange.setter
-    def autorange(self, value: str):  # Accepts ON OFF
+    def autorange(self, value):  # Accepts ON OFF or boolean
         """
         Sets the auto range for DC voltage measurement.
+        Accepts boolean or string equivalents ('ON'/'OFF','1'/'0','true'/'false').
         """
-        self.write(f":SENS:VOLT:DC:RANGE:AUTO {Scpi_Property.val2state(value)}")
+        state = "ON" if helper_methods.val_to_bool(value) else "OFF"
+        self.write(f":SENS:VOLT:DC:RANGE:AUTO {state}")
 
     @property
     def range_dc(self):
@@ -119,9 +122,20 @@ class K2000(Instrument):
     def range_dc(self, value: float):
         """
         Configures the range for DC measurement.
+        If value < 0 the instrument is set to auto range.
         """
-        # self.write(f":SENS:VOLT:DC:RANG {value}")
-        self.sens.volt.dc.range(value)
+        if value is None:
+            raise ValueError("range_dc requires a numeric value or negative for auto range")
+        try:
+            v = float(value)
+        except Exception:
+            raise ValueError("range_dc requires a numeric value")
+
+        if v < 0:
+            # Auto range
+            self.write(":SENS:VOLT:DC:RANG:AUTO ON")
+        else:
+            self.write(f":SENS:VOLT:DC:RANG {v}")
 
     @property
     def resolution_dc(self):

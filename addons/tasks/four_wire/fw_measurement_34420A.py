@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, cast
 from threading import Thread, Event
 import time
 
@@ -28,7 +28,7 @@ class vdp_data_pack:
     # sheet_resistance_chart: ChartData
 
 
-def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
+def meas_4w_vdp(task_obj: Task) -> None:
     """
     Performs a four-wire resistance measurement using the Van der Pauw method.
 
@@ -49,6 +49,8 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
         data (List[ChartData]): List of ChartData objects to which measured values are appended.
         exit_flag (Event): Event to signal when to terminate the measurement loop.
     """
+    data = task_obj.data
+    exit_flag = task_obj.exit_flag
     # Initialize ChartData objects
     horizontal_chart_1 = ChartData(
         name="Horizontal Resistance",
@@ -112,9 +114,9 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
     if relay_entry_black is None or relay_entry_grey is None or nv34420_entry is None:
         return
     # Get SCPI instrument objects
-    relay_matrix_black: RelayMatrix = relay_entry_black.scpi_instrument
-    relay_matrix_grey: RelayMatrix = relay_entry_grey.scpi_instrument
-    nv34420: NV34420 = nv34420_entry.scpi_instrument
+    relay_matrix_black: RelayMatrix = cast(RelayMatrix, relay_entry_black.scpi_instrument)
+    relay_matrix_grey: RelayMatrix = cast(RelayMatrix, relay_entry_grey.scpi_instrument)
+    nv34420: NV34420 = cast(NV34420, nv34420_entry.scpi_instrument)
 
     # Configure instruments
     nv34420.configure_resistance(nplc=10)

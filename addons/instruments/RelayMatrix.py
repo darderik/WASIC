@@ -57,19 +57,6 @@ class RelayMatrix(Instrument):
         self._child_lock = threading.RLock()
         self.properties_list: List[property_info] = []  # No properties
         self.sleep_after_write=100e-3  # 100 ms delay after write to avoid overloading the relay matrix
-
-    def write(self, command: str) -> None:
-        """Override Instrument.write to add a small delay after each write.
-
-        Calls the parent implementation and then sleeps for self.sleep_after_write.
-        """
-        # Call the base class write implementation
-        with self._child_lock:
-            super().write(command)
-            time.sleep(self.sleep_after_write)
-    def query(self, msg):
-        with self._child_lock:
-            return super().query(msg)
     def opc(self) -> None:
         """
         Waits for the operation to complete.

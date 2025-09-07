@@ -8,9 +8,12 @@ from addons.tasks.utilities import spawn_data_processor, generic_processor
 from connections import Connections
 import logging
 from .rm_transient_uts import calculate_rise_time, calculate_fall_time
+from typing import cast
 
 
-def rm_transient_2012_C(data: List[ChartData], exit_flag: Event) -> None:
+def rm_transient_2012_C(task_obj: Task) -> None:
+    data = task_obj.data
+    exit_flag = task_obj.exit_flag
     # Setup Data
     transient_rise_chart: ChartData = ChartData(
         name="Transienti in salita",
@@ -37,8 +40,8 @@ def rm_transient_2012_C(data: List[ChartData], exit_flag: Event) -> None:
     if scope_entry is None or rm_entry is None:
         logger.error("One or more instruments could not be initialized.")
         return
-    scope: TDS2012C = scope_entry.scpi_instrument
-    relay_matrix: RelayMatrix = rm_entry.scpi_instrument
+    scope: TDS2012C = cast(TDS2012C, scope_entry.scpi_instrument)
+    relay_matrix: RelayMatrix = cast(RelayMatrix, rm_entry.scpi_instrument)
 
     # End of Init section -----
     points: int = 2500
@@ -121,8 +124,6 @@ def rm_transient_2012_C(data: List[ChartData], exit_flag: Event) -> None:
         relay_matrix.switch_commute_reset_all()
         exit_flag.set()
         Tasks().check()
-        if newThreadProcessor is not None:
-            newThreadProcessor.join()
 
 
 def init_rm_transient_2012_C() -> None:

@@ -354,7 +354,6 @@ def detect_baud_rate(
                 resource_name,
                 stopbits,
             )
-            time.sleep(0.1)  # brief pause between attempts
             inst: Optional[SCPI_Instrument] = None
             try:
                 inst = SCPI_Instrument(
@@ -387,18 +386,18 @@ def detect_baud_rate(
                     continue
 
                 first_stripped = str(first).strip()
-                logger.debug(
-                    "Received response from %s at %s: '%s'",
-                    resource_name,
-                    baudrate,
-                    first_stripped,
-                )
                 if (
                     first_stripped
                     and first_stripped.lower() not in HANDSHAKE_TOKENS
                     and validate_response(first)
                 ):
                     current_idn = "".join(c for c in first_stripped if c in string.printable)
+                    logger.debug(
+                    "Received response from %s at %s: '%s'",
+                    resource_name,
+                    baudrate,
+                    current_idn,
+                    )
                     save_serial_params(port, baudrate, stopbits)
                     return (baudrate, current_idn)
 

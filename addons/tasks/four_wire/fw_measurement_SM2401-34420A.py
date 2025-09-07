@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, cast
 from threading import Thread, Event
 import time
 import sympy as sp
@@ -13,7 +13,9 @@ from connections import Connections
 import streamlit as st
 
 
-def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
+def meas_4w_vdp(task_obj: Task) -> None:
+    data = task_obj.data
+    exit_flag = task_obj.exit_flag
     """
     Performs a four-wire resistance measurement using the Van der Pauw method.
 
@@ -89,10 +91,10 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
         return
 
     # Get SCPI instrument objects
-    relay_matrix: RelayMatrix = relay_entry.scpi_instrument
-    k2000: K2000 = k2000_entry.scpi_instrument
-    sm2401: SM2401 = sm2401_entry.scpi_instrument
-    nv34420: NV34420 = nv34420_entry.scpi_instrument
+    relay_matrix: RelayMatrix = cast(RelayMatrix, relay_entry.scpi_instrument)
+    k2000: K2000 = cast(K2000, k2000_entry.scpi_instrument)
+    sm2401: SM2401 = cast(SM2401, sm2401_entry.scpi_instrument)
+    nv34420: NV34420 = cast(NV34420, nv34420_entry.scpi_instrument)
 
     # Configure instruments
     k2000.disable_beep()
@@ -154,9 +156,6 @@ def meas_4w_vdp(data: List[ChartData], exit_flag: Event) -> None:
         )
         sheet_resistance_chart.raw_x.append(avg_probe_R)
 
-    # Clean up: join the data processing thread before exiting
-    data_thread.join()
-
 
 def R_probe_temp(resistance: float) -> float:
     """
@@ -187,7 +186,7 @@ def van_der_pauw_calculation(resistances: List[float]) -> float:
     """
     R_h, R_v = [abs(r) for r in resistances]
     R_s = sp.Symbol("R_s")  # Sheet resistance symbol
-    equation = sp.Eq(sp.exp(-sp.pi * R_h / R_s) + sp.exp(-sp.pi * R_v / R_s) - 1, 0)
+    equation = sp.Eq(sp.exp(-sp.pi * R_h / R_s) + sp.exp(-sp.pi * R_v / R_s), 1)
     numeric_eq = sp.lambdify(R_s, equation.lhs, modules="numpy")
     try:
         sheet_resistance = brentq(numeric_eq, 1e-20, 1e6)

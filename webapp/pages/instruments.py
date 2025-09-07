@@ -67,21 +67,10 @@ def instruments_page(alias: str) -> None:
         # Display Instrument Name
         st.subheader(f"🔌 {instr_name}")
 
-        # Display Properties if available
-        str_properties_types: List[str] = (
-            conf_obj.get("init_properties_types", []) or []
-        )
-        # Hacky way for converting the class name to string
-        has_properties: bool = (
-            len(
-                [
-                    is_prop
-                    for is_prop in str_properties_types
-                    if is_prop in str(type(cur_scpi_instrument))
-                ]
-            )
-            > 0
-        )
+        try:
+            has_properties = cur_scpi_instrument.properties_list
+        except AttributeError:
+            has_properties = False
 
         if has_properties:
             instr_properties: List[property_info] = cur_scpi_instrument.properties_list

@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, cast
 from threading import Thread, Event
 import time
 from tasks import Task, Tasks, ChartData
@@ -10,7 +10,9 @@ import logging
 from .rm_transient_uts import calculate_rise_time, calculate_fall_time
 
 
-def rm_transient(data: List[ChartData], exit_flag: Event) -> None:
+def rm_transient(task_obj: Task) -> None:
+    data = task_obj.data
+    exit_flag = task_obj.exit_flag
     # Setup Data
     transient_rise_chart: ChartData = ChartData(
         name="Transienti in salita",
@@ -35,8 +37,8 @@ def rm_transient(data: List[ChartData], exit_flag: Event) -> None:
     if scope_entry is None or rm_entry is None:
         logger.error("One or more instruments could not be initialized.")
         return
-    scope: TBS1052C = scope_entry.scpi_instrument
-    relay_matrix: RelayMatrix = rm_entry.scpi_instrument
+    scope: TBS1052C = cast(TBS1052C, scope_entry.scpi_instrument)
+    relay_matrix: RelayMatrix = cast(RelayMatrix, rm_entry.scpi_instrument)
 
     # A single data processor function should handle all charts data associated within the task
     newThreadProcessor: Optional[Thread] = spawn_data_processor(

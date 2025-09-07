@@ -37,7 +37,7 @@ class SCPI_Info:
 @dataclass
 class Instrument_Entry:
     data: SCPI_Info
-    scpi_instrument: SCPI_Instrument = None
+    scpi_instrument: SCPI_Instrument
     _config: Config = Config()
 
     def write_wrapper(self, command: str) -> None:

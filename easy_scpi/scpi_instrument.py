@@ -39,7 +39,16 @@ class helper_methods:
         elif val in ["0", "false", "off", 0]:
             return False
         raise ValueError(f"Invalid value for boolean conversion: {val}")
+    @staticmethod
+    def val_to_state(val) -> str:
+        """
+        Converts a boolean or string to 'ON' or 'OFF'.
 
+        :param val: The value to convert.
+        :returns: 'ON' if the value is True or equivalent, 'OFF' otherwise.
+        """
+        val_bool = helper_methods.val_to_bool(val)
+        return "ON" if val_bool else "OFF"
 
 class SCPI_Instrument:
     """

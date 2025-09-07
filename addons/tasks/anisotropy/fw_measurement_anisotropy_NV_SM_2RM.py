@@ -1,6 +1,6 @@
 from calendar import c
 import re
-from typing import Optional, List
+from typing import Optional, List, cast
 from threading import Event
 import time
 import math
@@ -12,22 +12,7 @@ from addons.instruments import RelayMatrix, NV34420, SM2401
 from connections import Connections
 
 
-def meas_anisotropy(data: List[ChartData], exit_flag: Event) -> None:
-
-    # ChartData objects to store measured values
-    # Current I
-    i_chart: ChartData = ChartData(name="Current", y_label="A")
-    vc32_chart: ChartData = ChartData(name="Vc32", y_label="V")
-    vc37_chart_18: ChartData = ChartData(name="Vc37_I18", y_label="V")
-    vc26_chart: ChartData = ChartData(name="Vc26", y_label="V")
-    vc37_chart: ChartData = ChartData(name="Vc37", y_label="V")
-    vc48_chart: ChartData = ChartData(name="Vc48", y_label="V")
-    v_top_chart: ChartData = ChartData(name="Vtop", y_label="V")
-    v_bottom_chart: ChartData = ChartData(name="Vbottom", y_label="V")
-
-    data.extend(
-        [i_chart, vc26_chart, vc37_chart, vc48_chart, v_top_chart, v_bottom_chart, vc32_chart, vc37_chart_18]
-    )
+def meas_anisotropy(task_obj: Task) -> None:
     # Get instruments from connections
     conn = Connections()
 
@@ -36,31 +21,44 @@ def meas_anisotropy(data: List[ChartData], exit_flag: Event) -> None:
     relay_black_entry: Optional[Instrument_Entry] = conn.get_instrument("0035001F3133510137303835")
     nv_entry: Optional[Instrument_Entry] = conn.get_instrument("34420A")
     sm_entry: Optional[Instrument_Entry] = conn.get_instrument("4055551")
+    # ChartData objects to store measured values
+    # Current I
+    data = task_obj.data
+    exit_flag = task_obj.exit_flag
+    i_chart: ChartData = ChartData(name="Current", y_label="A")
+    vc32_chart: ChartData = ChartData(name="Vc32", y_label="V", custom_type="histogram")
+    vc37_chart_18: ChartData = ChartData(name="Vc37_I18", y_label="V", custom_type="histogram")
+    vc26_chart: ChartData = ChartData(name="Vc26", y_label="V", custom_type="histogram")
+    vc37_chart: ChartData = ChartData(name="Vc37", y_label="V", custom_type="histogram")
+    vc48_chart: ChartData = ChartData(name="Vc48", y_label="V", custom_type="histogram")
+    v_top_chart: ChartData = ChartData(name="Vtop", y_label="V", custom_type="histogram")
+    v_bottom_chart: ChartData = ChartData(name="Vbottom", y_label="V", custom_type="histogram")
 
-    if not all([relay_grey_entry, relay_black_entry, nv_entry, sm_entry]):
+    data.extend(
+        [i_chart, vc26_chart, vc37_chart, vc48_chart, v_top_chart, v_bottom_chart, vc32_chart, vc37_chart_18]
+    )
+
+    if relay_grey_entry is None or relay_black_entry is None or nv_entry is None or sm_entry is None:
         exit_flag.set()
         return
 
-    relay_grey: RelayMatrix = relay_grey_entry.scpi_instrument
-    relay_black: RelayMatrix = relay_black_entry.scpi_instrument
-    nv: NV34420 = nv_entry.scpi_instrument
-    sm: SM2401 = sm_entry.scpi_instrument
+    relay_grey: RelayMatrix = cast(RelayMatrix, relay_grey_entry.scpi_instrument)
+    relay_black: RelayMatrix = cast(RelayMatrix, relay_black_entry.scpi_instrument)
+    nv: NV34420 = cast(NV34420, nv_entry.scpi_instrument)
+    sm: SM2401 = cast(SM2401, sm_entry.scpi_instrument)
 
     # Basic instrument configuration
-    try:
-        sm.disable_beep()
-        nv.disable_beep()
-        # configure SM as current source and NV for voltage measurement
-        current=10e-3
-        compliance=100e-3
-        sm.configure_current_source(current=current, compliance=compliance)
-        sm.output_off()
-        sm.configure_current_measure(nplc=5)
-        nv.configure_voltage(nplc=10)
-        relay_grey.switch_commute_reset_all()
-        relay_black.switch_commute_reset_all()
-    except Exception as e:
-        print(f"Error during instrument configuration: {e}")
+    sm.disable_beep()
+    nv.disable_beep()
+    # configure SM as current source and NV for voltage measurement
+    current: float = task_obj.parameters.get("current", 10e-3)  # Default to 10mA if not specified
+    compliance: float = task_obj.parameters.get("compliance", 100e-3)  # Default to 100mV if not specified
+    sm.configure_current_source(current=current, compliance=compliance)
+    sm.output_off()
+    sm.configure_current_measure(nplc=5)
+    nv.configure_voltage(nplc=10)
+    relay_grey.switch_commute_reset_all()
+    relay_black.switch_commute_reset_all()
 
     # Main measurement loop (barebone)
     # Placeholder relay configurations for two orthogonal directions
@@ -81,8 +79,9 @@ def meas_anisotropy(data: List[ChartData], exit_flag: Event) -> None:
     # Add more configurations as needed
 
     while True:
-        #current = sm.current
-        #compliance=10e-3
+        current = task_obj.parameters.get("current", 10e-3)  # Default to 10mA if not specified
+        compliance = task_obj.parameters.get("compliance", 100e-3)  #
+        
         # Top/bottom voltage
         # Inject current using sm2401
         i_chart.y.append(current)
@@ -133,6 +132,7 @@ def init_anisotropy_sm_nv_2rm() -> None:
         description="Barebone anisotropy measurement using two relay matrices and SM2401+34420",
         instrs_aliases=["2401","34420","relay matrix"],
         function=meas_anisotropy,
+        parameters={"current": 10e-3, "compliance": 100e-3}
     )
     tasks_obj = Tasks()
     tasks_obj.add_task(newTask)

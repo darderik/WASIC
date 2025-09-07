@@ -59,6 +59,7 @@ class SM2401(Instrument):
         )
         self.connect()
         # (Optional) Perform any initial configuration, e.g., disable beeps
+        self.reset()
         self.disable_beep()
         self.init_properties()
 

@@ -1,4 +1,4 @@
-from typing import List, Callable, Optional
+from typing import List, Callable, Optional, Any
 from dataclasses import dataclass, field
 
 
@@ -24,8 +24,8 @@ class ChartData:
 
     name: str = "Custom Chart"
     info: str = ""
-    math_formula_x: Optional[Callable] = None
-    math_formula_y: Optional[Callable] = None
+    math_formula_x: Optional[Callable[[Any], float]] = None
+    math_formula_y: Optional[Callable[[Any], float]] = None
     raw_x: List = field(default_factory=list)
     raw_y: List = field(default_factory=list)
     x: List[float] = field(default_factory=list)

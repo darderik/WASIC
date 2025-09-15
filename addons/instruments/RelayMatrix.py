@@ -56,7 +56,6 @@ class RelayMatrix(Instrument):
         )
         self._child_lock = threading.RLock()
         self.properties_list: List[property_info] = []  # No properties
-        self.sleep_after_write=100e-3  # 100 ms delay after write to avoid overloading the relay matrix
     def opc(self) -> None:
         """
         Waits for the operation to complete.

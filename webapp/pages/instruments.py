@@ -68,7 +68,7 @@ def instruments_page(alias: str) -> None:
         st.subheader(f"🔌 {instr_name}")
 
         try:
-            has_properties = cur_scpi_instrument.properties_list
+            has_properties = bool(cur_scpi_instrument.properties_list)
         except AttributeError:
             has_properties = False
 

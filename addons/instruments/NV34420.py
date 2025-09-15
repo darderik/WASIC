@@ -3,8 +3,8 @@ from instruments import SCPI_Info, property_info
 from typing import List
 from config import Config
 from pyvisa.constants import StopBits
-
-
+from numpy.typing import NDArray
+import numpy as np
 class NV34420(Instrument):
     """
     NV34420 Class
@@ -54,7 +54,7 @@ class NV34420(Instrument):
             read_termination="\n",
             write_termination="\n",
             stop_bits=StopBits.two,
-            timeout=5000,
+            timeout=1000,
             backend="@py",
             encoding="latin-1",
         )
@@ -136,7 +136,7 @@ class NV34420(Instrument):
     def set_remote(self) -> None:
         self.write("system:remote")
 
-    def measure_voltage(self) -> float:
+    def measure_voltage(self,config: bool =False) -> NDArray:
         """
         Performs a voltage measurement.
 
@@ -146,12 +146,13 @@ class NV34420(Instrument):
             Measured voltage value or NaN on error.
         """
         try:
-            self.write(":CONF:VOLT")
+            if (config):
+                self.write(":CONF:VOLT")
             return self.read_meas()
         except Exception:
-            return float('nan')
+            return np.array('nan')
 
-    def measure_resistance(self) -> float:
+    def measure_resistance(self) -> NDArray:
         """
         Performs a resistance measurement.
 
@@ -164,15 +165,33 @@ class NV34420(Instrument):
             self.write(":CONF:FRES")
             return self.read_meas()
         except Exception:
-            return float('nan')
+            return np.array('nan')
 
-    def read_meas(self) -> float:
+    def read_meas(self) -> NDArray:
         try:
             result: str = self.query(":READ?")
-            return float(result)
+            if "," in result:
+                return np.array(self._read_many(result))
+            else:
+                return np.array(self._read_single(result))
         except Exception:
+            # Return NaN if the query fails
+            return  np.array(float('nan'))
+
+    def _read_single(self, result: str) -> float:
+        try:
+            return float(result)
+        except (ValueError, TypeError):
             # Return NaN if the read fails or the response cannot be parsed
             return float('nan')
+
+    def _read_many(self, result: str) -> List[float]:
+        try:
+            str_values = result.split(',')
+            return [float(val) for val in str_values if val.strip()]
+        except (ValueError, TypeError):
+            # Return empty list if the read fails or the response cannot be parsed
+            return []
 
     def configure_resistance(
         self,
@@ -226,7 +245,27 @@ class NV34420(Instrument):
         else:
             self.voltage_range = range
         self.write(":CONF:VOLT")
-
-
+    def set_sample_count(self, count: int = 1) -> None:
+        """
+        Sets the sample count for measurements.
+        Parameters
+        ----------
+        count : int, optional
+            Number of samples to average per measurement.
+        """
+        self.write(f"sample:count {count}")
+    def trigger_configure(self, source: str = "IMM", delay: float = 0.0, count: int = 1) -> None:
+        """
+        Configures the trigger settings for measurements.
+        Parameters
+        ----------
+        source : str, optional
+            Trigger source (e.g., "IMM" for immediate).
+        delay : float, optional
+            Delay time in seconds before the measurement starts after the trigger.
+        """
+        self.write(f":TRIG:SOUR {source}")
+        self.write(f":TRIG:DEL {delay}")
+        self.write(f":TRIG:COUN {count}")
 # Register the instrument class with its alias
 Config().add_instrument_extension(("34420A", NV34420))

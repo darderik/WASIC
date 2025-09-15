@@ -5,6 +5,7 @@ from typing import List, Callable, Dict, Any, Optional
 from threading import Thread, Event, Lock
 from instruments import Instrument_Entry
 from .structures import ChartData
+from .helper import str_to_bool
 from connections import Connections
 import json
 import datetime
@@ -44,7 +45,7 @@ class Task:
         self._config = Config()
         self.custom_web_status = custom_web_status
         self.thread_handle: Optional[Thread] = None
-        self.parameters: Dict[str, Any] = parameters if parameters is not None else {}
+        self.parameters: Dict[str, str] = parameters if parameters is not None else {}
 
     def start(self) -> None:
         """Starts the task's function in a new non-blocking thread if not already running."""
@@ -111,10 +112,41 @@ class Task:
         """Saves collected chart data to files."""
         if self.custom_alias == "":
             self.custom_alias = "anonymous"
-        for chart in self.data:
-            file_name = f"{chart.name}_{self.custom_alias}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"
+        merge_files: bool = str_to_bool(self.parameters.get("merge_chart_files", "False"))
+        if not merge_files:
+            for chart in self.data:
+                file_name = f"{chart.name}_{self.custom_alias}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"
+                file_path = os.path.join(Config().get("data_charts_path"), file_name)
+                self.write_chart_to_json(chart, file_path)
+        else:
+            file_name = f"MERGED_{self.custom_alias}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"
             file_path = os.path.join(Config().get("data_charts_path"), file_name)
-            self.write_chart_to_json(chart, file_path)
+            try:
+                with open(file_path, mode="w") as file:
+                    merged_data = {
+                        chart.name: {
+                            "x": chart.x,
+                            "y": chart.y,
+                            "raw_x": chart.raw_x,
+                            "raw_y": chart.raw_y,
+                            "x_label": chart.x_label,
+                            "y_label": chart.y_label,
+                            "info": chart.info,
+                            "custom_name": chart.custom_name,
+                            "custom_type": chart.custom_type,
+                        }
+                        for chart in self.data
+                    }
+                    json.dump(
+                        merged_data,
+                        file,
+                        skipkeys=True,
+                        ensure_ascii=False,
+                        indent=4,
+                    )
+                logger.info(f"Merged chart data saved to {file_path}.")
+            except Exception as e:
+                logger.error(f"Failed to save merged chart data: {e}")
 
     def backup_saver(self):
         try:

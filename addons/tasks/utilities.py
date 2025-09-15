@@ -27,7 +27,7 @@ def spawn_data_processor(
 def apply_formula(target: List[float], raw: List, formula: Callable, pop: bool) -> None:
     cur_index = len(target)
     raw_len = len(raw)
-    if cur_index < len(raw) and not pop:
+    if cur_index < raw_len and not pop:
         for i in range(cur_index, raw_len):
             value = raw[i]
             new_value: float = formula(value)

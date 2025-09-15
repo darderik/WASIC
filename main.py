@@ -11,7 +11,6 @@ from connections import Connections
 # Import for forcing initialization of tasks
 from addons.tasks import *
 import threading
-from wasic_test import test_function
 
 
 def main():
@@ -44,10 +43,10 @@ def main():
     # Create and start a new thread to run test_function
     #    test_thread.start()
     #detect_baud_rate("COM10")
-    Connections().fetch_all_instruments()
+    #Connections().fetch_all_instruments()
     
     
-    Tasks().run_task("Anisotropy Meas SM2401+34420+2RM")
+    #Tasks().run_task("Noise 9V RM - NV34420")
     streamlit.web.bootstrap.run(script_path, False, [], {})
 
 if __name__ == "__main__":

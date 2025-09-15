@@ -8,7 +8,7 @@ import logging
 import math
 from .utilities import spawn_data_processor, generic_processor
 from connections import Connections
-
+from tasks import str_to_bool
 # filepath: c:\Users\Dardo\OneDrive\Progetti\Python\WASIC\user_defined\tasks\test_task.py
 
 
@@ -39,12 +39,22 @@ def test_task_function(task_obj: Task) -> None:
         custom_type="histogram",
         pop_raw=True,
     )
+    # Parse and deserialize parameters
+    params = task_obj.parameters
+    update_interval = float(params.get("update_interval", "0.1"))
+    scatter_max_x = float(params.get("scatter_max_x", "100"))
+    scatter_max_y = float(params.get("scatter_max_y", "10000"))
+    sine_amplitude = float(params.get("sine_amplitude", "50"))
+    histogram_mean = float(params.get("histogram_mean", "50"))
+    histogram_std = float(params.get("histogram_std", "15"))
+    merge_chart_files = str_to_bool(params.get("merge_chart_files", "True"))
+
 
     # Add all charts to data
     data.extend([scatter_chart, line_chart, histogram_chart])
     
     # Initialize time counter for sine wave
-    time_counter = 0
+    time_counter: float = 0.0
     
     try:
         while not exit_flag.is_set():
@@ -81,12 +91,13 @@ def init_test_task() -> None:
         instrs_aliases=[],
         function=test_task_function,
         parameters={
-            "update_interval": 0.1,
-            "scatter_max_x": 100,
-            "scatter_max_y": 10000,
-            "sine_amplitude": 50,
-            "histogram_mean": 50,
-            "histogram_std": 15
+            "update_interval": "0.1",
+            "scatter_max_x": "100",
+            "scatter_max_y": "10000",
+            "sine_amplitude": "50",
+            "histogram_mean": "50",
+            "histogram_std": "15",
+            "merge_chart_files": "True",
         },
     )
     tasks_obj = Tasks()

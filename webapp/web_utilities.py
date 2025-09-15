@@ -1,4 +1,4 @@
-from tasks import ChartData
+from tasks import ChartData, Tasks, Task
 import pandas as pd
 import plotly.express as px
 
@@ -57,6 +57,7 @@ def make_plotly_figure(chart_data: ChartData):
     try:
         if custom_type in ("", "scatter"):
             fig = px.scatter(df, x="x", y="y", title=title, labels={"x": x_label, "y": y_label})
+
         elif custom_type in ("histogram", "hist"):
             # Histogram of the y-values
             fig = px.histogram(df, x="y", title=title, labels={"y": y_label})

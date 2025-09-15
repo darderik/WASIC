@@ -51,8 +51,8 @@ def meas_anisotropy(task_obj: Task) -> None:
     sm.disable_beep()
     nv.disable_beep()
     # configure SM as current source and NV for voltage measurement
-    current: float = task_obj.parameters.get("current", 10e-3)  # Default to 10mA if not specified
-    compliance: float = task_obj.parameters.get("compliance", 100e-3)  # Default to 100mV if not specified
+    current: float = float(task_obj.parameters.get("current", 10e-3))  # Default to 10mA if not specified
+    compliance: float = float(task_obj.parameters.get("compliance", 100e-3))  # Default to 100mV if not specified
     sm.configure_current_source(current=current, compliance=compliance)
     sm.output_off()
     sm.configure_current_measure(nplc=5)
@@ -79,9 +79,9 @@ def meas_anisotropy(task_obj: Task) -> None:
     # Add more configurations as needed
 
     while True:
-        current = task_obj.parameters.get("current", 10e-3)  # Default to 10mA if not specified
-        compliance = task_obj.parameters.get("compliance", 100e-3)  #
-        
+        current = float(task_obj.parameters.get("current", 10e-3))  # Default to 10mA if not specified
+        compliance = float(task_obj.parameters.get("compliance", 100e-3))  # Default to 100mV if not specified
+
         # Top/bottom voltage
         # Inject current using sm2401
         i_chart.y.append(current)
@@ -132,7 +132,7 @@ def init_anisotropy_sm_nv_2rm() -> None:
         description="Barebone anisotropy measurement using two relay matrices and SM2401+34420",
         instrs_aliases=["2401","34420","relay matrix"],
         function=meas_anisotropy,
-        parameters={"current": 10e-3, "compliance": 100e-3}
+        parameters={"current": str(10e-3), "compliance": str(100e-3)}
     )
     tasks_obj = Tasks()
     tasks_obj.add_task(newTask)
@@ -142,19 +142,21 @@ def init_anisotropy_sm_nv_2rm() -> None:
 
 
 def delta_meas(nv: NV34420, sm: SM2401,current_abs:float = 100e-6,compliance:float =10e-3) -> float:
+    result:float = 0.0
     # Positive current direction
     sm.output_off()
     sm.configure_current_source(current=current_abs, compliance=compliance)
     sm.output_on()
-    time.sleep(0.2)  # wait for settling
+    time.sleep(0.05)  # wait for settling
     v_plus = nv.measure_voltage()
     # Negative current direction
     sm.configure_current_source(current=-1*current_abs, compliance=compliance)
-    time.sleep(0.2)  # wait for settling
+    time.sleep(0.05)  # wait for settling
     v_minus = nv.measure_voltage()
-    sm.output_off()
-    return (v_plus - v_minus) / 2
-
+    if type(v_minus) is float and type(v_plus) is float:
+        sm.output_off()
+        result = (v_plus - v_minus) / 2
+    return result
 
 def switch_relay_couple(
     relay1: RelayMatrix, relay2: RelayMatrix, config: List[List[str]]

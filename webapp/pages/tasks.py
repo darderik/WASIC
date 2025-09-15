@@ -59,7 +59,7 @@ with st.container():
     else:
         st.success("✅ Task is currently running", icon="✨")
 
-    col_task, col_run = st.columns([3, 1])
+    col_task, col_params,col_run = st.columns([2,2, 1])
 
     relevant_tasks = [
         tsk.name for tsk in tasks_obj._tasks_list if tsk.has_instruments()
@@ -82,6 +82,30 @@ with st.container():
                 disabled=is_task_running,
                 help="Choose a task to execute.",
             )
+        with col_params:
+            if task_selectbox:
+                task_obj = tasks_obj.get_task(task_selectbox)
+                if task_obj is not None:
+                    with st.expander("⚙️ Edit Task Parameters", expanded=True):
+                        # Display dictionary in an editable format using st.data_editor
+                        parameters_dict = task_obj.parameters or {}
+                        st.markdown("##### Parameters")
+                        edited_parameters = st.data_editor(
+                            parameters_dict,
+                            key=f"params_{task_obj.name}",
+                            use_container_width=True,
+                            num_rows="dynamic"
+                        )
+                        # Add an update parameters button
+                        if st.button(
+                            "🔄 Update Parameters",
+                            help="Apply changes to task parameters",
+                            use_container_width=True,
+                            type="secondary"
+                        ):
+                            if edited_parameters != parameters_dict:
+                                task_obj.parameters = edited_parameters
+                                st.success("✅ Parameters updated successfully!", icon="✨")
 
         with col_run:
             st.button(
@@ -125,35 +149,21 @@ if is_task_running and tasks_obj._is_running is not None:
                             st.markdown(f"**{i}.** `{instr.data.idn}`")
                 else:
                     st.info("No instruments associated.")
-
-    # Task Controls Section
-    st.markdown("### 🎛️ Task Controls")
-
-    if cur_task.parameters:
-        st.markdown("---")
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            with st.expander("⚙️ Edit Task Parameters", expanded=True):
-                # Display dictionary in an editable format using st.data_editor
-                parameters_dict = cur_task.parameters or {}
-                st.markdown("##### Parameters")
-                edited_parameters = st.data_editor(
-                    parameters_dict,
-                    key=f"params_{cur_task.name}",
-                    use_container_width=True,
-                    num_rows="dynamic"
-                )
-                # Add an update parameters button
-                if st.button("🔄 Update Parameters", help="Apply changes to task parameters", use_container_width=True, type="secondary"):
-                    if edited_parameters != parameters_dict:
-                        cur_task.parameters = edited_parameters
-                        st.success("✅ Parameters updated successfully!", icon="✨")
-        st.markdown("---")
+            
 
     col_alias, col_stop = st.columns([2, 1])
 
 
     with col_stop:
+        with col_alias:
+            with st.expander("✏️ Edit Task Alias", expanded=True):
+                st.text_input(
+                    "Task Alias",
+                    value=cur_task.custom_alias or "",
+                    key="task_alias",
+                    on_change=set_custom_alias,
+                    help="Set a custom alias for the running task for easier identification.",
+                )
         st.markdown("")  # Add spacing to align with text input
         st.markdown("")
         st.button(

@@ -6,3 +6,4 @@ from .NV34420 import NV34420
 from .TDS2012 import TDS2012
 from .TDS2012 import TDS2012C
 from .TBS1052 import TBS1052C
+from .SCPIInstrumentTemplate import SCPIInstrumentTemplate

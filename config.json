@@ -22,5 +22,6 @@
         "TBS1052C"
     ],
     "log_level": "DEBUG",
-    "custom_backend" : "C:\\Windows\\System32\\visa64.dll" 
+    "custom_backend" : "C:\\Windows\\System32\\visa64.dll",
+    "processor_sleep": 1.0 
 }

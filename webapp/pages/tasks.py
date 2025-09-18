@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, cast
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 from tasks import ChartData, Task, Tasks
@@ -20,23 +20,22 @@ def chart_update_frag(
     curDataList, paused, chart_placeholders, count_placeholders
 ) -> None:
     if is_task_running and tasks_obj._is_running is not None:
-        if len(curDataList) != num_charts:
-            st.rerun(scope="app")
-
         # Update counts and charts
-        for idx, curChartData in enumerate(curDataList):
+        for idx in range(min(len(curDataList), len(chart_placeholders))):
+            curChartData = curDataList[idx]
             # Update count information
+            curChartData = cast(ChartData, curChartData)
             with count_placeholders[idx]:
                 col1, col2 = st.columns(2)
                 with col1:
                     st.metric(
                         label="📊 Raw Data Points",
-                        value=f"{len(curChartData.raw_x)} X, {len(curChartData.raw_y)} Y",
+                        value=f"{len(curChartData.x_series.raw)} X, {len(curChartData.y_series.raw)} Y",
                     )
                 with col2:
                     st.metric(
                         label="⚡ Processed Data Points",
-                        value=f"{len(curChartData.x)} X, {len(curChartData.y)} Y",
+                        value=f"{len(curChartData.x_series.processed)} X, {len(curChartData.y_series.processed)} Y",
                     )
 
             # Update chart if not paused
@@ -222,19 +221,20 @@ if is_task_running and tasks_obj._is_running is not None:
         # Handle paused state
         if paused:
             # Show static charts when paused
-            for idx, curChartData in enumerate(curDataList):
+            for idx in range(min(len(curDataList), len(chart_placeholders))):
+                curChartData = curDataList[idx]
                 # Update static metrics
                 with count_placeholders[idx]:
                     col1, col2 = st.columns(2)
                     with col1:
                         st.metric(
                             label="📊 Raw Data Points",
-                            value=f"{len(curChartData.raw_x)} X, {len(curChartData.raw_y)} Y",
+                            value=f"{len(curChartData.x_series.raw)} X, {len(curChartData.y_series.raw)} Y",
                         )
                     with col2:
                         st.metric(
                             label="⚡ Processed Data Points",
-                            value=f"{len(curChartData.x)} X, {len(curChartData.y)} Y",
+                            value=f"{len(curChartData.x_series.processed)} X, {len(curChartData.y_series.processed)} Y",
                         )
 
                 # Show static chart

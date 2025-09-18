@@ -46,7 +46,7 @@ def main():
     #Connections().fetch_all_instruments()
     
     
-    #Tasks().run_task("Noise 9V RM - NV34420")
+    Tasks().run_task("Test Charts")
     streamlit.web.bootstrap.run(script_path, False, [], {})
 
 if __name__ == "__main__":

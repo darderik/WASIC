@@ -2,9 +2,9 @@ from easy_scpi import Instrument
 from instruments import SCPI_Info, property_info
 from typing import List
 from config import Config
+from .SCPIInstrumentTemplate import SCPIInstrumentTemplate
 
-
-class SM2401(Instrument):
+class SM2401(SCPIInstrumentTemplate):
     """
     SM2401 Class
     ============
@@ -49,6 +49,7 @@ class SM2401(Instrument):
             Object containing port and baud rate information for the connection.
         """
         super().__init__(
+            scpi_info=scpi_info,
             port=scpi_info.port,
             baud_rate=scpi_info.baud_rate,
             read_termination="\n",

@@ -10,7 +10,6 @@ from serial.tools.list_ports import comports
 from instruments import Instrument_Entry, SCPI_Info
 from easy_scpi import Instrument
 from config import Config
-from addons import custom_instr_handler
 from .utilities import detect_baud_wrapper, is_instrument_in_aliases
 import pyvisa as visa
 
@@ -280,8 +279,10 @@ class Connections:
             instr_info_json: List[dict[str, Any]] = [
                 asdict(item) for item in instr_info_list
             ]
+            file_path: str = self._config.get("instrument_connections_datapath", "")
             try:
-                file_path: str = self._config.get("instrument_connections_datapath", "")
+                if not file_path:
+                    raise ValueError("Configuration file path is not set.")
                 with open(file_path, "w") as data_file:
                     json.dump(instr_info_json, data_file, indent=4)
             except FileNotFoundError:
@@ -342,3 +343,36 @@ class Connections:
             except (OSError, ValueError) as e:
                 logger.error(f"Error loading configuration: {e}")
                 self.fetch_all_instruments(self._config.get("instr_aliases", []))
+
+    def _custom_instr_handler(self,scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
+        # Fetch global backend from connections resource    
+        config= self._config
+        cur_backend: str = self.backend if scpi_info.baud_rate == 0 else "@py"
+        instr_extensions: List[tuple[str, type]] = config.get("instruments_extensions", [])
+        newSCPI: Optional[Instrument] = None
+        curInstrumentWrapper: Optional[Instrument_Entry] = None
+        # Fetch from config singleton
+        for instr_ext in instr_extensions:
+            if instr_ext[0].lower() in scpi_info.idn.lower():
+                type_name = instr_ext[0]
+                type_obj = instr_ext[1]
+                logger.debug(f"Found extension for {scpi_info.idn}")
+                newSCPI = type_obj(scpi_info=scpi_info, backend=cur_backend)
+                break
+        # No extension found, use default instrument class
+        if newSCPI is None:
+            logger.debug("No extension found, using default SCPI_Instrument")
+            newSCPI = Instrument(
+                port=scpi_info.port,
+                baud_rate=scpi_info.baud_rate,
+            )
+    
+        if newSCPI is not None:
+            if not newSCPI.connected:
+                newSCPI.connect()
+            # Lock the instrument resource
+            curInstrumentWrapper = Instrument_Entry(
+                data=scpi_info,
+                scpi_instrument=newSCPI,
+            )
+        return curInstrumentWrapper

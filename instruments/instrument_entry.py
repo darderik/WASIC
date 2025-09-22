@@ -26,7 +26,6 @@ class SCPI_Info:
     alias : str
         The alias name for the SCPI instrument.
     """
-
     port: str
     baud_rate: int
     idn: str = ""

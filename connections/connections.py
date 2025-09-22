@@ -259,7 +259,7 @@ class Connections:
 
     def _add_instrument(self, scpi_info: SCPI_Info) -> None:
         """Adds an instrument to the instruments list."""
-        instrument_entry = custom_instr_handler(scpi_info)
+        instrument_entry = self._custom_instr_handler(scpi_info)
         if instrument_entry:
             self.instruments_list.append(instrument_entry)
             logger.info(f"Successfully added instrument: {scpi_info.idn}")
@@ -324,7 +324,7 @@ class Connections:
                 for instr_info in instr_info_list:
                     if not self.is_scpi_info_busy(instr_info):
                         instrument_entry: Optional[Instrument_Entry] = (
-                            custom_instr_handler(instr_info)
+                            self._custom_instr_handler(instr_info)
                         )
                         if instrument_entry is not None:
                             self.instruments_list.append(instrument_entry)
@@ -347,7 +347,7 @@ class Connections:
     def _custom_instr_handler(self,scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
         # Fetch global backend from connections resource    
         config= self._config
-        cur_backend: str = self.backend if scpi_info.baud_rate == 0 else "@py"
+        cur_backend: str = self.backend
         instr_extensions: List[tuple[str, type]] = config.get("instruments_extensions", [])
         newSCPI: Optional[Instrument] = None
         curInstrumentWrapper: Optional[Instrument_Entry] = None

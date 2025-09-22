@@ -328,9 +328,12 @@ class SCPI_Instrument:
 
         :param port: Name of port to connect to.
         :param match: Whether to verify the port matches a resource. [Default: True]
-        :raises ValueError: If connection type is not specified.
+        :raises ValueError: If connection type is not specified or port is invalid.
         """
-        prefixes = ["COM", "USB", "GPIB", "TCPIP"]
+        if not isinstance(port, str) or not port.strip():
+            raise ValueError("Port must be a non-empty string identifier (e.g., 'ASRL3::INSTR').")
+
+        prefixes = ["COM", "USB", "GPIB", "TCPIP", "ASRL"]
         port_name = port.upper()
 
         if not any(port_name.startswith(p) for p in prefixes):
@@ -341,19 +344,17 @@ class SCPI_Instrument:
 
         self.__port = port
 
-        # search for resource
-        if any(port_name.startswith(p) for p in prefixes[1:]):
-            # connections except com
-            resource_pattern = (
-                port
-                if port_name.endswith("INSTR") or port_name.endswith("SOCKET")
-                else f"{ port }::.*::INSTR"
-            )
-
+        # If port already looks like a VISA resource string, use it directly
+        if "::" in port and (port_name.endswith("INSTR") or port_name.endswith("SOCKET")):
+            resource_pattern = port
+        elif any(port_name.startswith(p) for p in prefixes[1:]):
+            # connections except COM
+            resource_pattern = f"{port}::.*::INSTR"
         elif port_name.startswith("COM"):
             r_port = port.replace("COM", "")
             resource_pattern = f"ASRL((?:COM)?{r_port})::INSTR"
-
+        elif port_name.startswith("ASRL"):
+            resource_pattern = port
         else:
             # redundant error check for future compatibility
             raise ValueError(f"Port must start with one of the following: {prefixes}.")

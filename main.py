@@ -37,16 +37,10 @@ def main():
 
     logging.info("Starting WASIC...")
 
-    # Streamlit boot
     script_path = os.path.abspath("streamlit_app.py")
-    # New thread test function
-    # Create and start a new thread to run test_function
-    #    test_thread.start()
-    #detect_baud_rate("COM10")
-    #Connections().fetch_all_instruments()
+
     
     
-    Tasks().run_task("Test Charts")
     streamlit.web.bootstrap.run(script_path, False, [], {})
 
 if __name__ == "__main__":

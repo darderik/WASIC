@@ -26,16 +26,11 @@ class TBS1052C(SCPIInstrumentTemplate):
         super().__init__(
             scpi_info,
             timeout=kwargs.get("timeout", 5000),
-            handshake=kwargs.get("handshake", True),
-            write_termination=kwargs.get("write_termination", "\n"),
-            read_termination=kwargs.get("read_termination", "\n"),
             backend=kwargs.get("backend", "@py"),
             encoding=kwargs.get("encoding", "latin-1"),
-        )
-
-        # USB is default; set serial defaults sanely if used
-        self.stop_bits = kwargs.get("stop_bits", StopBits.one)
-
+            handshake=False,
+            write_termination="\n",
+            read_termination="\n",)
         # Establish I/O (safe if already connected)
         try:
             self.connect()
@@ -185,6 +180,10 @@ class TBS1052C(SCPIInstrumentTemplate):
     def get_record_length(self) -> int:
         return int(float(self.query("HORizontal:RECOrdlength?")))
 
+    def set_horizontal_position(self, position:float) -> None:
+        self.write(f"HORIZONTAL:MAIN:DELAY:TIME {position}")
+    def get_horizontal_position(self) -> float:
+        return float(self.query("HORizontal:POSition?"))
     # ---------------- Trigger (Edge, A) ----------------
     def trig_edge(self, source: str = "CH1", slope: str = "RIS", coupling: str = "DC") -> None:
         # Type EDGE

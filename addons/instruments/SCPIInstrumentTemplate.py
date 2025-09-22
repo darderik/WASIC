@@ -29,7 +29,7 @@ class SCPIInstrumentTemplate(Instrument):
             port=scpi_info.port,
             timeout=kwargs.get("timeout", 5000),
             baud_rate=scpi_info.baud_rate,
-            handshake=kwargs.get("handshake", True),
+            handshake=kwargs.get("handshake", False),
             write_termination=kwargs.get("write_termination", "\n"),
             read_termination=kwargs.get("read_termination", "\n"),
             backend=kwargs.get("backend", "@py"),

@@ -20,7 +20,7 @@ class AxisMeta:
 @dataclass
 class Series:
     """Pair of raw/processed series with axis metadata."""
-    raw: List[float] = field(default_factory=list, metadata={"help": "Raw samples for this series."})
+    raw: List[Any] = field(default_factory=list, metadata={"help": "Raw samples for this series."})
     processed: List[float] = field(default_factory=list, metadata={"help": "Processed samples for this series."})
     meta: AxisMeta = field(default_factory=AxisMeta, metadata={"help": "Axis metadata."})
 

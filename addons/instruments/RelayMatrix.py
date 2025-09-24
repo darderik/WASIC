@@ -47,7 +47,7 @@ class RelayMatrix(SCPIInstrumentTemplate):
             handshake=kwargs.get("handshake", True),
             write_termination=kwargs.get("write_termination", "\n"),
             read_termination=kwargs.get("read_termination", "\n"),
-            backend=kwargs.get("backend", "@py"),
+            backend="@py",
             encoding=kwargs.get("encoding", "ascii"),
         )
 

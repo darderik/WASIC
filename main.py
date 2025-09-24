@@ -7,7 +7,7 @@ from config import Config
 from connections.utilities import detect_baud_rate
 from tasks import Tasks
 from connections import Connections
-
+from wasic_test import use_as_library
 # Import for forcing initialization of tasks
 from addons.tasks import *
 import threading
@@ -39,7 +39,12 @@ def main():
 
     script_path = os.path.abspath("streamlit_app.py")
 
-    
+
+
+
+    ## DEBUG PURPOSES
+
+    use_as_library()
     
     streamlit.web.bootstrap.run(script_path, False, [], {})
 

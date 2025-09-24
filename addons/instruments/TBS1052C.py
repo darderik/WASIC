@@ -4,6 +4,7 @@ from pyvisa.constants import StopBits
 from instruments import SCPI_Info, property_info
 from config import Config
 from .SCPIInstrumentTemplate import SCPIInstrumentTemplate
+import time  # added for inter-command delays
 
 
 class TBS1052C(SCPIInstrumentTemplate):
@@ -22,6 +23,31 @@ class TBS1052C(SCPIInstrumentTemplate):
       - All measurement methods return List[float] for consistency
     """
 
+    # ---------------- Static (edit-in-code) timing configuration ----------------
+    ENABLE_DELAYS: bool = True  # Toggle all extra delays globally
+    DEFAULT_COMMAND_DELAY: float = 0.0  # Fallback delay if no command key matches
+    COMMAND_DELAYS: dict[str, float] = {
+        "ACQuire": 0.5,
+        "HORizontal:MAIn:SCAle": 0.05,
+        "HORizontal:RECOrdlength": 0.10,
+        "HORizontal:TRIGger:POSition": 0.01,
+        "HORizontal:POSition": 0.01,
+        "HORIZONTAL:MAIN:DELAY:TIME": 0.01,
+        "HORIZONTAL:MAIN:DELAY:STATE": 0.01,
+        "DATa:SOUrce": 0.01,
+        "DATa:STARt": 0.01,
+        "DATa:STOP": 0.01,
+        "WFMOutpre:BYT_Nr": 0.01,
+        "WFMOutpre:ENCdg": 0.01,
+        "TRIGger:A:TYPe": 0.05,
+        "TRIGger:A:EDGE:SOUrce": 0.01,
+        "TRIGger:A:EDGE:SLOPe": 0.01,
+        "TRIGger:A:EDGE:COUPling": 0.01,
+        "MEASUrement:IMMed:TYPe": 0.01,
+        "AUTOSet": 0.20,
+        "FACtory": 0.50,
+    }
+
     def __init__(self, scpi_info: SCPI_Info, **kwargs) -> None:
         super().__init__(
             scpi_info,
@@ -31,12 +57,13 @@ class TBS1052C(SCPIInstrumentTemplate):
             handshake=False,
             write_termination="\n",
             read_termination="\n",)
-        # Establish I/O (safe if already connected)
+        # (Delays are static; no runtime kwargs customization to keep caller generic.)
         try:
             self.connect()
+            self.reset()
+            time.sleep(0.5)
         except Exception:
             pass
-
         self.init_properties()
 
     # ---------------- Properties panel (optional for your UI) ----------------
@@ -83,9 +110,10 @@ class TBS1052C(SCPIInstrumentTemplate):
         self.write("ACQuire:STATE STOP")
 
     def single(self) -> None:
+        # CRITICAL unknown behaviour without delay
         # ACQuire:STOPAfter SEQuence;:ACQuire:STATE RUN
-        self.write("ACQuire:STOPAfter SEQuence;:ACQuire:STATE RUN")
-
+        self.write("ACQuire:STOPAfter SEQuence")
+        self.run()
     def set_stop_after(self, mode: str = "RUNSTop") -> None:
         m = mode.upper()
         if m not in ("RUNSTOP", "SEQUENCE", "SEQuence", "RUNSTop"):
@@ -179,9 +207,18 @@ class TBS1052C(SCPIInstrumentTemplate):
 
     def get_record_length(self) -> int:
         return int(float(self.query("HORizontal:RECOrdlength?")))
-
-    def set_horizontal_position(self, position:float) -> None:
+    
+    def enable_horizontal_delay(self, on:bool) -> None:
+        self.write(f"HORIZONTAL:MAIN:DELAY:STATE {'ON' if on else 'OFF'}")    
+    def set_horizontal_delay(self, position:float) -> None:
         self.write(f"HORIZONTAL:MAIN:DELAY:TIME {position}")
+    def get_horizontal_delay(self) -> float:
+        return float(self.query("HORIZONTAL:MAIN:DELAY:TIME?"))
+    
+
+
+    def set_horizontal_position(self, position: float) -> None:
+        self.write(f"HORizontal:POSition {position}")
     def get_horizontal_position(self) -> float:
         return float(self.query("HORizontal:POSition?"))
     # ---------------- Trigger (Edge, A) ----------------
@@ -279,10 +316,12 @@ class TBS1052C(SCPIInstrumentTemplate):
         e = rec if stop is None else int(stop)
 
         self._prepare_waveform_read(source, s, e, width_bytes, binary)
-
+        if self.ENABLE_DELAYS:
+            time.sleep(0.02)
         pre = self._read_preamble()
         n_expected = pre["NR_Pt"]
-
+        if self.ENABLE_DELAYS:
+            time.sleep(0.01)
         # Fetch curve
         if binary:
             codes = self.query_binary_values("CURVe?", datatype='B')
@@ -325,6 +364,23 @@ class TBS1052C(SCPIInstrumentTemplate):
     def factory(self) -> None:
         """Factory defaults (does not change comms or calibration)."""
         self.write("FACtory")
+
+    def _apply_delay(self, msg: str) -> None:
+        if not self.ENABLE_DELAYS:
+            return
+        # Simple substring match (fast). First matching key wins.
+        for key, delay in self.COMMAND_DELAYS.items():
+            if key in msg:
+                if delay > 0:
+                    time.sleep(delay)
+                return
+        # Fallback default
+        if self.DEFAULT_COMMAND_DELAY > 0:
+            time.sleep(self.DEFAULT_COMMAND_DELAY)
+
+    def write(self, msg: str) -> None:  # override to inject delays
+        super().write(msg)
+        self._apply_delay(msg)
 
 
 # Optional registration (match your framework's discovery)

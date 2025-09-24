@@ -74,29 +74,32 @@ def rm_transient(task_obj: Task) -> None:
     scope.set_channel_position(2, 1)
     scope.set_channel_scale(1, 1)
     scope.set_channel_scale(2, 1)
-    scope.set_trigger_position_divs(3e-3)
+    scope.set_channel_position(1,2.6e-3)
+    scope.enable_horizontal_delay(True)
     # Data setup
     scope.stop()
+    scope.opc_wait()
     scope.set_record_length(data_points)
-    # Reset and ground (A1)
     relay_matrix.switch_commute_reset_all()
     relay_matrix.switch_commute_exclusive(five_v_combination)
     try:
         while not exit_flag.is_set():
             # Set up for fall transient measurement (5V to GND combination)
-            scope.set_time_scale(200e-6)  # Set time scale for fall transient
+            scope.set_time_scale(1e-3)  # Set time scale for fall transient
+            scope.set_horizontal_delay(2.6e-3)
+            scope.set_channel_position(1,-2) # Adjust channel position (vertically)
             relay_matrix.opc()  # Wait for relay matrix operation to complete
             scope.single()  # Arm the scope for single acquisition
             relay_matrix.switch_commute_exclusive(gnd_combination)  # Switch relay to GND combination
-            relay_matrix.opc()  # Wait for relay matrix operation to complete
+            relay_matrix.opc()  # Wait for relay scope.set_channel_position(1,-2)matrix operation to complete
             scope.opc_wait()  # Wait for scope operation to complete
             t_fall, V_fall, _ = scope.get_waveform()  # Acquire fall waveform
             scope.stop()  # Stop the scope
-            scope.opc_wait()  # Wait for scope operation to complete
 
             # Set up for rise transient measurement (GND combination to 5V)
             scope.set_time_scale(200e-6)  # Set time scale for rise transient
-            scope.set_trigger_position_divs(2.3e-3)  # Adjust trigger position
+            scope.set_horizontal_delay(2.6e-3)  # Adjust trigger position
+            scope.set_channel_position(1,-2) # Adjust channel position
             scope.single()  # Arm the scope for single acquisition
             relay_matrix.switch_commute_exclusive(five_v_combination)  # Switch relay to 5V combination
             relay_matrix.opc()  # Wait for relay matrix operation to complete
@@ -133,6 +136,7 @@ def init_rm_transient() -> None:
             "data_points": "2000",
             "5V Combination": "a1",
             "GND Combination": "a2",
+            "merge_chart_files": "True"
         },
     )
     tasks_obj = Tasks()

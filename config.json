@@ -13,7 +13,7 @@
     "data_charts_path": "data\\charts",
     "backup_switch" : true,
     "data_charts_relative_bkps": "backups",
-    "backup_schedule": 60,
+    "backup_schedule": 120,
     "default_timeout": 0.5,
     "init_properties_types": [
         "NV34420",

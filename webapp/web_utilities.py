@@ -42,6 +42,20 @@ def make_plotly_figure(chart_data: ChartData):
     # Convert to lists
     y_list = _to_list(y_processed)
     x_list = _to_list(x_processed)
+    # Filter out nan in couple (check if x is not null)
+    if x_list and y_list:
+        filtered_pairs = [(x, y) for x, y in zip(x_list, y_list) if pd.notna(x) and pd.notna(y)]
+        if filtered_pairs:
+            x_list, y_list = zip(*filtered_pairs)
+            x_list = list(x_list)
+            y_list = list(y_list)
+        else:
+            x_list = []
+            y_list = []
+    elif y_list:
+        y_list = [y for y in y_list if pd.notna(y)]
+    elif x_list:
+        x_list = [x for x in x_list if pd.notna(x)]
 
     if custom_type in ("histogram", "hist"):
         # Histogram: prioritize y, then x if y is empty

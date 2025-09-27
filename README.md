@@ -25,6 +25,9 @@ Make sure you have the following tools installed:
 
 
 
+## Recommendations
+On Windows, one shall uninstall USBTMC drivers of USB instruments and use WINUSB drivers.
+View [pyvisa-py doc](https://pyvisa.readthedocs.io/projects/pyvisa-py/en/latest/installation.html#usb-resources-usb-instr-raw)
 
 ## Installation
 

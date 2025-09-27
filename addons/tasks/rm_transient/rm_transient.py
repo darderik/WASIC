@@ -66,6 +66,9 @@ def rm_transient(task_obj: Task) -> None:
 
     # Scope setup
     time.sleep(1)
+    # Set attenuation CH1
+    ch1_attenuation: float = float(task_obj.parameters.get("CH1 Attenuation", 1))
+    scope.set_probe_attenuation(1, ch1_attenuation)
     # Setup trigger with rise detection on CH2
     scope.trig_edge(source="CH2", slope="RISE")
     scope.trig_level(1.0, ch=2)
@@ -74,37 +77,42 @@ def rm_transient(task_obj: Task) -> None:
     scope.set_channel_position(2, 1)
     scope.set_channel_scale(1, 1)
     scope.set_channel_scale(2, 1)
-    scope.set_channel_position(1,2.6e-3)
-    scope.enable_horizontal_delay(True)
     # Data setup
     scope.stop()
     scope.opc_wait()
-    scope.set_record_length(data_points)
     relay_matrix.switch_commute_reset_all()
     relay_matrix.switch_commute_exclusive(five_v_combination)
+
+    # --- Horizontal setup ---
+    scope.set_horizontal_delay(0)
+    scope.set_trigger_position_divs(0)
+    scope.set_horizontal_position(0)
+    scope.enable_horizontal_delay(True)
+    scope.set_record_length(data_points)
+
     try:
         while not exit_flag.is_set():
             # Set up for fall transient measurement (5V to GND combination)
-            scope.set_time_scale(1e-3)  # Set time scale for fall transient
-            scope.set_horizontal_delay(2.6e-3)
+            scope.set_time_scale(100e-6)  # Set time scale for fall transient
+            scope.set_horizontal_delay(2e-3)
             scope.set_channel_position(1,-2) # Adjust channel position (vertically)
-            relay_matrix.opc()  # Wait for relay matrix operation to complete
             scope.single()  # Arm the scope for single acquisition
             relay_matrix.switch_commute_exclusive(gnd_combination)  # Switch relay to GND combination
             relay_matrix.opc()  # Wait for relay scope.set_channel_position(1,-2)matrix operation to complete
-            scope.opc_wait()  # Wait for scope operation to complete
-            t_fall, V_fall, _ = scope.get_waveform()  # Acquire fall waveform
+            scope.opc()
+            t_fall, V_fall, _ = scope.get_waveform(center_wavfrm=True, stop=data_points)  # Acquire fall waveform
             scope.stop()  # Stop the scope
 
             # Set up for rise transient measurement (GND combination to 5V)
-            scope.set_time_scale(200e-6)  # Set time scale for rise transient
-            scope.set_horizontal_delay(2.6e-3)  # Adjust trigger position
+            scope.set_time_scale(100e-6)  # Set time scale for rise transient
+            scope.set_horizontal_delay(2e-3)  # Adjust trigger position
             scope.set_channel_position(1,-2) # Adjust channel position
             scope.single()  # Arm the scope for single acquisition
             relay_matrix.switch_commute_exclusive(five_v_combination)  # Switch relay to 5V combination
             relay_matrix.opc()  # Wait for relay matrix operation to complete
-            scope.opc_wait()  # Wait for scope operation to complete
-            t_rise, V_rise, _ = scope.get_waveform()  # Acquire rise waveform
+            #scope.wait_acquire_complete()
+            scope.opc()
+            t_rise, V_rise, _ = scope.get_waveform(center_wavfrm=True, stop = data_points)  # Acquire rise waveform
 
             # Save waveform data
             fall_data_wavfrm = [t_fall, V_fall]  # Save fall waveform data
@@ -115,9 +123,10 @@ def rm_transient(task_obj: Task) -> None:
 
             # Stop the scope after processing
             scope.stop()
-            scope.opc_wait()
+            #scope.wait_acquire_complete()
+            scope.opc()
 
-    except Exception as e:
+    except ValueError as e:
         logger.error(f"Error in task: {e}")
     finally:
         relay_matrix.switch_commute_reset_all()
@@ -136,7 +145,8 @@ def init_rm_transient() -> None:
             "data_points": "2000",
             "5V Combination": "a1",
             "GND Combination": "a2",
-            "merge_chart_files": "True"
+            "merge_chart_files": "True",
+            "CH1 Attenuation": "1",
         },
     )
     tasks_obj = Tasks()

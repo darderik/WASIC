@@ -1,11 +1,12 @@
 # TBS1052C.py
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Any
 from pyvisa.constants import StopBits
 from instruments import SCPI_Info, property_info
 from config import Config
 from .SCPIInstrumentTemplate import SCPIInstrumentTemplate
 import time  # added for inter-command delays
-
+from threading import RLock
+import re  # added for WFMOutpre parsing
 
 class TBS1052C(SCPIInstrumentTemplate):
     """
@@ -27,7 +28,7 @@ class TBS1052C(SCPIInstrumentTemplate):
     ENABLE_DELAYS: bool = True  # Toggle all extra delays globally
     DEFAULT_COMMAND_DELAY: float = 0.0  # Fallback delay if no command key matches
     COMMAND_DELAYS: dict[str, float] = {
-        "ACQuire": 0.5,
+        "ACQuire": 0.2,
         "HORizontal:MAIn:SCAle": 0.05,
         "HORizontal:RECOrdlength": 0.10,
         "HORizontal:TRIGger:POSition": 0.01,
@@ -51,7 +52,7 @@ class TBS1052C(SCPIInstrumentTemplate):
     def __init__(self, scpi_info: SCPI_Info, **kwargs) -> None:
         super().__init__(
             scpi_info,
-            timeout=kwargs.get("timeout", 5000),
+            timeout=kwargs.get("timeout", 10000),
             backend=kwargs.get("backend", "@py"),
             encoding=kwargs.get("encoding", "latin-1"),
             handshake=False,
@@ -65,6 +66,7 @@ class TBS1052C(SCPIInstrumentTemplate):
         except Exception:
             pass
         self.init_properties()
+        self._local_lock = RLock()
 
     # ---------------- Properties panel (optional for your UI) ----------------
     def init_properties(self) -> None:
@@ -119,7 +121,16 @@ class TBS1052C(SCPIInstrumentTemplate):
         if m not in ("RUNSTOP", "SEQUENCE", "SEQuence", "RUNSTop"):
             raise ValueError("mode must be RUNSTop or SEQuence")
         self.write(f"ACQuire:STOPAfter {m}")
-
+    def wait_acquire_complete(self, timeout: float = 10.0) -> bool:
+        # Wait for acquisition to complete (ACQuire:STATE STOP)
+        start_time = time.time()
+        while True:
+            state = str(self.query("ACQuire:STATE?")).strip().upper()
+            if state == "0":
+                return True
+            if (time.time() - start_time) > timeout:
+                return False
+            time.sleep(0.1)
     def opc_wait(self) -> None:
         # Convenience wrapper for *OPC? via parent opc()
         self.opc()
@@ -190,7 +201,11 @@ class TBS1052C(SCPIInstrumentTemplate):
     def set_probe_gain(self, ch: int, gain: float) -> None:
         # e.g., 0.1 for a "10x" probe (gain = output/input)
         self.write(f"{self._ch(ch)}:PRObe:GAIN {gain}")
-
+    def set_probe_attenuation(self, ch: int, attenuation: float) -> None:
+        # e.g., 10 for a "10x" probe (attenuation = input/output)
+        if attenuation == 0:
+            raise ValueError("Attenuation must be non-zero.")
+        self.write(f"{self._ch(ch)}:PRObe:GAIN {1/attenuation}")
     # ---------------- Horizontal / timebase ----------------
     def set_time_scale(self, sec_per_div: float) -> None:
         self.write(f"HORizontal:MAIn:SCAle {sec_per_div}")
@@ -202,8 +217,6 @@ class TBS1052C(SCPIInstrumentTemplate):
         # Sets position of trigger within record in divisions
         self.write(f"HORizontal:TRIGger:POSition {divs}")
 
-    def set_record_length(self, points: int) -> None:
-        self.write(f"HORizontal:RECOrdlength {int(points)}")
 
     def get_record_length(self) -> int:
         return int(float(self.query("HORizontal:RECOrdlength?")))
@@ -214,8 +227,6 @@ class TBS1052C(SCPIInstrumentTemplate):
         self.write(f"HORIZONTAL:MAIN:DELAY:TIME {position}")
     def get_horizontal_delay(self) -> float:
         return float(self.query("HORIZONTAL:MAIN:DELAY:TIME?"))
-    
-
 
     def set_horizontal_position(self, position: float) -> None:
         self.write(f"HORizontal:POSition {position}")
@@ -250,6 +261,9 @@ class TBS1052C(SCPIInstrumentTemplate):
         return [val]
 
     # ---------------- Waveform I/O ----------------
+    def set_waveform_xzero(self, xzero) -> None:
+        self.write(f"WFMInpre:XZEro {xzero}")
+        
     def _prepare_waveform_read(self, source: str, start: int, stop: int, width_bytes: int = 1, binary: bool = True) -> None:
         # Select source (CH1|CH2|MATH|REF1|REF2)
         self.write(f"DATa:SOUrce {source.upper()}")
@@ -261,25 +275,84 @@ class TBS1052C(SCPIInstrumentTemplate):
         # Encoding via WFMOutpre (instrument also supports HEADer ON/OFF globally)
         self.write(f"WFMOutpre:BYT_Nr {1 if width_bytes != 2 else 2}")
         self.write(f"WFMOutpre:ENCdg {'BIN' if binary else 'ASCii'}")
-
+    def set_record_length(self, points: int = 0, auto:bool = False) -> None:
+        if auto:
+            self.write("HORizontal:RECOrdlength:AUTO 1")
+            return
+        else:
+            self.write("HORizontal:RECOrdlength:AUTO 0")
+        if points < 1000 or points > 20000:
+            raise ValueError("Record length must be between 1000 and 1,000,000 points.")
+        self.write(f"HORizontal:RECOrdlength {points}")
+    
     def _read_preamble(self) -> dict:
-        # Query needed preamble items for scaling arrays
-        # We request individually to keep parsing simple and robust.
-        pre = {}
-        pre["NR_Pt"] = int(float(self.query("WFMOutpre:NR_Pt?")))
-        pre["XINcr"] = float(self.query("WFMOutpre:XINcr?"))
-        pre["XZEro"] = float(self.query("WFMOutpre:XZEro?"))
-        pre["YMUlt"] = float(self.query("WFMOutpre:YMUlt?"))
-        pre["YOFf"] = float(self.query("WFMOutpre:YOFf?"))
-        pre["YZEro"] = float(self.query("WFMOutpre:YZEro?"))
-        # Optional units (nice to return to caller)
+        """
+        Parser compatto per WFMOutPre? del TBS1000C (formato a lista con ordine fisso).
+        Restituisce le chiavi legacy: NR_Pt, XINcr, XZEro, YMUlt, YOFf, YZEro,
+        PT_Off, XUNit, YUNit + extra (BYT_NR, BIT_NR, ENCDG, BN_FMT, BYT_OR, WFID, PT_Fmt, NR_FRM, TCLK).
+        """
+        raw = self.query("WFMOutPre?") or ""
+        # normalizza e splitta sui ';'
+        parts = [p.strip() for p in re.sub(r'[\r\n]+', ' ', raw).lstrip(':').split(';')]
+
+        def dequote(s: str) -> str:
+            s = s.strip()
+            return s[1:-1] if len(s) >= 2 and s[0] == s[-1] == '"' else s
+
+        def num_or_str(s: str):
+            s = dequote(s)
+            s = re.sub(r'(?<=-)\s+(?=\d)', '', s)  # "- 1.0E-3" -> "-1.0E-3"
+            try:
+                return float(s)
+            except ValueError:
+                return s
+
+        # ordine Tek TBS1000C (lista senza nomi):
+        # 0:BYT_NR 1:BIT_NR 2:ENCDG 3:BN_FMT 4:BYT_OR 5:WFID 6:NR_PT 7:PT_FMT
+        # 8:XUNIT 9:XINCR 10:XZERO 11:PT_OFF 12:YUNIT 13:YMULT 14:YOFF 15:YZERO 16:NR_FRM 17:TCLK
+        m = {}
         try:
-            pre["XUNit"] = str(self.query("WFMOutpre:XUNit?")).strip()
-            pre["YUNit"] = str(self.query("WFMOutpre:YUNit?")).strip()
+            m["BYT_NR"] = num_or_str(parts[0])
+            m["BIT_NR"] = num_or_str(parts[1])
+            m["ENCDG"]  = dequote(parts[2])
+            m["BN_FMT"] = dequote(parts[3])
+            m["BYT_OR"] = dequote(parts[4])
+            m["WFID"]   = dequote(parts[5])
+            m["NR_Pt"]  = int(num_or_str(parts[6]))
+            m["PT_Fmt"] = dequote(parts[7])
+            m["XUNit"]  = dequote(parts[8])
+            m["XINcr"]  = float(num_or_str(parts[9]))
+            m["XZEro"]  = float(num_or_str(parts[10]))
+            m["PT_Off"] = int(num_or_str(parts[11]))  # sul TBS spesso resta 0
+            m["YUNit"]  = dequote(parts[12])
+            m["YMUlt"]  = float(num_or_str(parts[13]))
+            m["YOFf"]   = float(num_or_str(parts[14]))
+            m["YZEro"]  = float(num_or_str(parts[15]))
+            m["NR_FRM"] = int(num_or_str(parts[16])) if len(parts) > 16 else None
+            m["TCLK"]   = num_or_str(parts[17])       if len(parts) > 17 else None
         except Exception:
-            pre["XUNit"] = "s"
-            pre["YUNit"] = "V"
-        return pre
+            pass  # cadrà nei fallback sotto se qualcosa manca
+
+        # Fallback essenziali (solo se non presenti o parse fallito)
+        q = lambda s: (self.query(s) or "").strip()
+        if "NR_Pt" not in m or not isinstance(m.get("NR_Pt"), (int, float)):
+            try: m["NR_Pt"] = int(float(q("WFMOutpre:NR_Pt?")))
+            except: pass
+        for k, scpi in [("XINcr","WFMOutpre:XINcr?"),
+                        ("XZEro","WFMOutpre:XZEro?"),
+                        ("YMUlt","WFMOutpre:YMUlt?"),
+                        ("YOFf" ,"WFMOutpre:YOFf?"),
+                        ("YZEro","WFMOutpre:YZEro?"),
+                        ("PT_Off","WFMOutpre:PT_Off?"),
+                        ("XUNit","WFMOutpre:XUNit?"),
+                        ("YUNit","WFMOutpre:YUNit?")]:
+            if k not in m or m[k] in ("", None):
+                try:
+                    v = q(scpi)
+                    m[k] = float(v) if re.search(r'[0-9]', v) and k not in ("XUNit","YUNit") else dequote(v)
+                except:
+                    pass
+        return m
 
     def _parse_curve_ascii(self, resp: str) -> List[int]:
         # Response like ":CURVE 61,62,..." or just "61,62,..."
@@ -297,11 +370,12 @@ class TBS1052C(SCPIInstrumentTemplate):
         return list(data) if hasattr(data, '__iter__') else [data]
 
     def get_waveform(self,
+                     start: int = 1,
+                     stop: int = 1000,
                      source: str = "CH1",
-                     start: Optional[int] = None,
-                     stop: Optional[int] = None,
                      width_bytes: int = 1,
-                     binary: bool = True) -> Tuple[List[float], List[float], dict]:
+                     binary: bool = True,
+                     center_wavfrm = False,) -> Tuple[List[float], List[float], dict]:
         """
         Download a waveform and return (time_s, volts, preamble_dict).
         - source: CH1|CH2|MATH|REF1|REF2
@@ -314,12 +388,14 @@ class TBS1052C(SCPIInstrumentTemplate):
         rec = self.get_record_length()
         s = 1 if start is None else int(start)
         e = rec if stop is None else int(stop)
-
         self._prepare_waveform_read(source, s, e, width_bytes, binary)
         if self.ENABLE_DELAYS:
             time.sleep(0.02)
         pre = self._read_preamble()
-        n_expected = pre["NR_Pt"]
+        # Parsing from preamble dict
+        xzero = pre["XZEro"]
+        xincr = pre["XINcr"]
+        n_expected = int(pre["NR_Pt"])
         if self.ENABLE_DELAYS:
             time.sleep(0.01)
         # Fetch curve
@@ -336,9 +412,9 @@ class TBS1052C(SCPIInstrumentTemplate):
             codes = codes[:n_expected]
 
         # Build time axis
-        t0 = pre["XZEro"]
-        dt = pre["XINcr"]
-        time_s = [t0 + i * dt for i in range(len(codes))]
+        t_first = xzero + (start - 1) * xincr
+        time_s  = [t_first + i*xincr for i in range(len(codes))]
+
 
         # Convert sample codes to volts: V = (code - YOFf) * YMUlt + yzer
         yoff = pre["YOFf"]
@@ -379,8 +455,9 @@ class TBS1052C(SCPIInstrumentTemplate):
             time.sleep(self.DEFAULT_COMMAND_DELAY)
 
     def write(self, msg: str) -> None:  # override to inject delays
-        super().write(msg)
-        self._apply_delay(msg)
+        with self._local_lock:
+            super().write(msg)
+            self._apply_delay(msg)
 
 
 # Optional registration (match your framework's discovery)

@@ -178,55 +178,43 @@ class Connections:
         self, locked_ports: List[str], visa_dll_path: str
     ) -> None:
         """Fetches instruments connected via USB using the VISA resource manager."""
+        available_rms = ["@ivi", "@py"]
         try:
-            resource_manager = (
-                visa.ResourceManager(visa_dll_path)
-                if visa_dll_path
-                else visa.ResourceManager("@py")
-            )
-            all_usb_instruments = resource_manager.list_resources()
-            logger.debug(f"USB instruments found: {all_usb_instruments}")
-            for usb_instr in (
-                x
-                for x in all_usb_instruments
-                if x not in locked_ports
-                # and "ASRL" not in x
-            ):
-                self._process_usb_instrument(usb_instr)
+            for backend in available_rms:
+                resource_manager = (
+                    visa.ResourceManager(visa_dll_path)
+                    if visa_dll_path and backend == "@ivi"
+                    else visa.ResourceManager(backend)
+                )
+                all_usb_instruments = resource_manager.list_resources()
+                logger.debug(f"USB instruments found with backend {backend}: {all_usb_instruments}")
+                for usb_instr in (
+                    x
+                    for x in all_usb_instruments
+                    if x not in locked_ports
+                    and "ASRL" not in x
+                ):
+                    self._process_usb_instrument(usb_instr, backend)
+                del resource_manager
 
         except Exception as e:
-            logger.error(f"Failed to initialize VISA resource manager: {e}")
+            logger.error(f"Failed to initialize using USB resource manager: {e}")
 
-    def _process_usb_instrument(self, usb_instr: str) -> None:
+    def _process_usb_instrument(self, usb_instr: str, backend: str) -> None:
         """Processes a single USB instrument."""
+        id_str = ""
         try:
-            # Always use custom backend for USB instruments (pyvisa-py not supported)
             cur_instr = Instrument(
-                port=usb_instr,
-                backend=Config().get("custom_backend", ""),
-                write_terminator="\n",
-                read_terminator="\n",
-            )
-            try:
-                cur_instr.connect()
-                id_str = cur_instr.id
-                if not id_str:
-                    logger.error(
-                        f"Failed to read IDN from {usb_instr} on first attempt. Skipping..."
-                    )
-                    return
-            except Exception as e:
-                logger.error(
-                    f"Protocol error: |{e}| while trying to read IDN from {usb_instr}. Skipping..."
+                    port=usb_instr,
+                    backend=backend,
+                    write_terminator="\n",
+                    read_terminator="\n",
                 )
-                return
+            cur_instr.connect()
+            id_str= cur_instr.id
             alias = is_instrument_in_aliases(idn=id_str)
             del cur_instr
             if alias:
-                # Force backend to custom backend for USB instruments (globally)
-                if self.backend == "@py" or self.backend == "":
-                    # Use custom backend for USB instruments
-                    self.backend = Config().get("custom_backend", "")
                 splitted_idn = id_str.split(",")
                 scpi_info = SCPI_Info(
                     port=usb_instr,
@@ -234,7 +222,8 @@ class Connections:
                     idn=id_str,
                     alias=alias,
                     name=f"{splitted_idn[0]} {splitted_idn[1]}",
-                )
+                    backend=backend                
+                    )
                 self._add_instrument(scpi_info)
         except Exception as e:
             logger.error(f"Failed to create instrument for USB: {usb_instr} -> {e}")
@@ -357,7 +346,11 @@ class Connections:
                 type_name = instr_ext[0]
                 type_obj = instr_ext[1]
                 logger.debug(f"Found extension for {scpi_info.idn}")
-                newSCPI = type_obj(scpi_info=scpi_info, backend=cur_backend)
+                if "USB" in scpi_info.port:
+                    bend = scpi_info.backend if scpi_info.backend != "" else cur_backend
+                    newSCPI = type_obj(scpi_info=scpi_info, backend=bend)
+                else:
+                    newSCPI = type_obj(scpi_info=scpi_info, backend=cur_backend)
                 break
         # No extension found, use default instrument class
         if newSCPI is None:

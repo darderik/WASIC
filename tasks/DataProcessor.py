@@ -1,4 +1,4 @@
-from .task import Task
+from .task import Task, Tasks
 from typing import List, Callable
 from threading import Event, Thread
 import time
@@ -18,6 +18,7 @@ class DataProcessor:
         self.exit_flag = cur_task.exit_flag
         self.watchdog_thread = Thread(target=self.__watchdog)
         self.last_backup_time = datetime.datetime.now()
+        self.datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     def start(self) -> Thread:
         """Starts the data processor thread."""
         if not self.watchdog_thread.is_alive():
@@ -61,7 +62,8 @@ class DataProcessor:
                 logger.error(f"Error in data processing: {e}")
                 continue
             if last_iteration:
-                self.cur_task.stop()
+                #self.cur_task.stop()
+                Tasks().stop_task()
                 break
             # Check if time to backup has elapsed
             backup_schedule = Config().get("backup_schedule", 60.0)
@@ -100,7 +102,7 @@ class DataProcessor:
             # Flag check
             if not Config().get("backup_switch", True):
                 return
-            date: str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            date: str = self.datetime
             backup_schedule: float = Config().get("backup_schedule", 60.0)
             file_path: str = (
                 Config().get("data_charts_path")

@@ -52,13 +52,13 @@ is_task_running: bool = tasks_obj._is_running is not None
 
 # Set the main title of the page with a container for better spacing
 with st.container():
-    st.title("🔧 Tasks Selector")
+    st.title("🔧 Tasks Selector")    
     if not is_task_running:
         st.markdown("### 🎯 Select and Run a Task")
     else:
         st.success("✅ Task is currently running", icon="✨")
 
-    col_task, col_params,col_run = st.columns([2,2, 1])
+    col_task, col_params, col_run = st.columns([2, 2, 1])
 
     relevant_tasks = [
         tsk.name for tsk in tasks_obj._tasks_list if tsk.has_instruments()
@@ -72,12 +72,21 @@ with st.container():
             use_container_width=True,
         ):
             st.rerun(scope="app")
-
+    
     else:
         with col_task:
+            # Determine the index to show in the selectbox
+            if is_task_running and tasks_obj._is_running is not None:
+                running_task_name = tasks_obj._is_running.name
+                # Find the index of the running task in the list
+                default_index = relevant_tasks.index(running_task_name) if running_task_name in relevant_tasks else 0
+            else:
+                default_index = 0
+            
             task_selectbox: str = st.selectbox(
                 "Select Task",
                 relevant_tasks,
+                index=default_index,
                 disabled=is_task_running,
                 help="Choose a task to execute.",
             )
@@ -195,26 +204,38 @@ if is_task_running and tasks_obj._is_running is not None:
                 paused = st.checkbox("⏸️ Pause Updates", False)
 
         st.markdown("---")
-
+        
         # Create placeholders for each chart
         chart_placeholders: List[DeltaGenerator] = []
         count_placeholders: List[DeltaGenerator] = []
-
         num_charts = len(curDataList)
 
         for i, chart in enumerate(curDataList):
             # Chart container
             with st.container():
                 st.markdown(f"#### 📈 {chart.name}")
-
+                  # Chart type selector - available for all charts during execution
+                curChartData = cast(ChartData, chart)
+                curChartData.config.custom_type = st.selectbox(
+                    "Select Chart Type",
+                    ["scatter", "line", "histogram"],
+                    index=["scatter", "line", "histogram"].index(
+                        curChartData.config.custom_type
+                        if curChartData.config.custom_type in ["scatter", "line", "histogram"]
+                        else "scatter"
+                    ),
+                    key=f"chart_type_{running_task.name}_{i}",
+                    help="Change the chart type for visualization.",
+                )
+                
                 # Metrics row
                 count_placeholder: DeltaGenerator = st.empty()
                 count_placeholders.append(count_placeholder)
-
+                
                 # Chart row
                 chart_placeholder: DeltaGenerator = st.empty()
                 chart_placeholders.append(chart_placeholder)
-
+                
                 if i < len(curDataList) - 1:  # Add separator except for last chart
                     st.markdown("---")
 
@@ -223,6 +244,8 @@ if is_task_running and tasks_obj._is_running is not None:
             # Show static charts when paused
             for idx in range(min(len(curDataList), len(chart_placeholders))):
                 curChartData = curDataList[idx]
+                curChartData = cast(ChartData, curChartData)
+
                 # Update static metrics
                 with count_placeholders[idx]:
                     col1, col2 = st.columns(2)

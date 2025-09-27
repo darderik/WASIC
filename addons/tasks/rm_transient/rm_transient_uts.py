@@ -56,7 +56,7 @@ def transient_value_extractor(transient, value:float) -> float:
             t2 = t[first_below_index]
             if V2 == V1:
                 return t1
-            lin_fit_res = np.interp(value, [V1, V2], [t1, t2])
+            lin_fit_res = lin_fit(value, [V1, V2], [t1, t2])
         else:
             # Rise transient
             np_V = np.array(V)
@@ -77,5 +77,12 @@ def transient_value_extractor(transient, value:float) -> float:
             t2 = t[first_above_index]
             if V2 == V1:
                 return t1
-            lin_fit_res = np.interp(value, [V1, V2], [t1, t2])
+            lin_fit_res = lin_fit(value, [V1, V2], [t1, t2])
         return float(lin_fit_res)
+def lin_fit(value,xs,ys):
+    """ Linear fit [x1 x2], [y1 y2] to find y at value x """
+    x1, x2 = xs
+    y1, y2 = ys
+    if x2 == x1:
+        return y1
+    return y1 + (value - x1) * (y2 - y1) / (x2 - x1)

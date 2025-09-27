@@ -201,13 +201,13 @@ class SM2401(SCPIInstrumentTemplate):
         resp = self.query("*OPC?")
         return resp
     def configure_current_measure(self, nplc: float, autorange:bool =True) -> None:
+        self.write(":CONF:CURR")
         self.write(f":SENS:CURR:NPLC {nplc}")
         if autorange:
             self.write(":SENS:CURR:RANG:AUTO ON")
         else:
             self.write(":SENS:CURR:RANG:AUTO OFF")
         self.write(":FORMAT:ELEM CURR")
-        self.write(":CONF:CURR")
 
     def configure_voltage_measure(self, nplc: float, autorange:bool =True) -> None:
         self.write(f":SENS:VOLT:NPLC {nplc}")

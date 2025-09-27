@@ -145,7 +145,6 @@ class Tasks:
             self._tasks_list: List[Task] = []
             self._is_running: Optional[Task] = None
             self._tasks_init_list: List[Callable[[], None]] = []
-            atexit.register(self.stop_task)
             logger.info("Tasks manager instance created.")
 
     def add_init_task(self, task: Callable[[], None]) -> None:

@@ -6,50 +6,16 @@ from easy_scpi import helper_methods
 from .SCPIInstrumentTemplate import SCPIInstrumentTemplate
 
 class K2000(SCPIInstrumentTemplate):
-    """
-    K2000 Class
-    ===========
-    Enhanced class to configure and use the Keithley 2000 multimeter via SCPI.
-    Supports all major measurement functions including voltage, current, resistance,
-    frequency, period, temperature, and capacitance.
+    """Keithley 2000 multimeter helper.
 
-    Properties
-    ----------
-    range_dc : float
-        Range for DC voltage measurement (getter and setter).
-    resolution_dc : int
-        Resolution for DC voltage measurement (getter and setter).
-    range_ac : float
-        Range for AC voltage measurement (getter and setter).
-    resolution_ac : int
-        Resolution for AC voltage measurement (getter and setter).
-    nplc : float
-        Number of power line cycles for integration time.
-    trigger_source : str
-        Trigger source (IMM, BUS, etc.)
-
-    Methods
-    -------
-    measure_voltage_dc() -> List[float]:
-        Performs a DC voltage measurement.
-    measure_voltage_ac() -> List[float]:
-        Performs an AC voltage measurement.
-    measure_current_dc() -> List[float]:
-        Performs a DC current measurement.
-    measure_current_ac() -> List[float]:
-        Performs an AC current measurement.
-    measure_resistance_2w() -> List[float]:
-        Performs a 2-wire resistance measurement.
-    measure_resistance_4w() -> List[float]:
-        Performs a 4-wire resistance measurement.
-    measure_frequency() -> List[float]:
-        Performs a frequency measurement.
-    measure_period() -> List[float]:
-        Performs a period measurement.
-    measure_temperature() -> List[float]:
-        Performs a temperature measurement.
-    measure_capacitance() -> List[float]:
-        Performs a capacitance measurement.
+    Note: measurement is now a two-step model: configure_* then measure_*.
+    The measure_* methods no longer send :CONF commands on every call; they
+    just trigger/read based on the existing configuration.
+    Global settings:
+      - nplc: applies integration time to all relevant functions.
+      - autozero: controls automatic zero.
+      - filter_enabled / filter_type / filter_count: digital averaging filter
+        applied to all supported functions.
     """
 
     def __init__(self, scpi_info: SCPI_Info, **kwargs) -> None:
@@ -73,10 +39,10 @@ class K2000(SCPIInstrumentTemplate):
             backend="@py",
         )
         self.connect()
-        self.disable_beep()
         self.rst()  # Reset to known state
         self.cls()  # Clear any error conditions
         self.init_properties()
+        self.disable_beep()
 
     def disable_beep(self) -> None:
         """
@@ -135,16 +101,10 @@ class K2000(SCPIInstrumentTemplate):
                 lambda x: setattr(self, "nplc", x),
             ),
             property_info(
-                "Trigger Source",
-                str,
-                lambda: self.trigger_source,
-                lambda x: setattr(self, "trigger_source", x),
-            ),
-            property_info(
-                "Math Function",
-                str,
-                lambda: self.math_function,
-                lambda x: setattr(self, "math_function", x),
+                "Autozero",
+                bool,
+                lambda: self.autozero,
+                lambda x: setattr(self, "autozero", x),
             ),
         ]
 
@@ -233,267 +193,208 @@ class K2000(SCPIInstrumentTemplate):
         """
         self.write(f":SENS:VOLT:AC:DIG {value}")
 
+    # --- Global integration time (NPLC) ---
     @property
     def nplc(self) -> float:
-        """Get the number of power line cycles for integration time."""
-        # Get NPLC for current function - using DC voltage as default
-        return float(self.query(":SENS:VOLT:DC:NPLC?"))
+        """Get the integration time (NPLC) for the primary DC voltage function.
+
+        This is used as a reference; setter applies the same NPLC to
+        VOLT:DC/AC, CURR:DC/AC, RES, and FRES where supported.
+        """
+        try:
+            return float(self.query(":SENS:VOLT:DC:NPLC?"))
+        except Exception:
+            return 1.0
 
     @nplc.setter
     def nplc(self, value: float) -> None:
-        """Set the number of power line cycles for integration time (0.01 to 10)."""
-        if not 0.01 <= value <= 10:
-            raise ValueError("NPLC must be between 0.01 and 10")
-        # Set for all functions that support NPLC
-        functions = ["VOLT:DC", "VOLT:AC", "CURR:DC", "RES", "FRES"]
+        """Set NPLC for all relevant sensing functions.
+
+        Applies to VOLT:DC, VOLT:AC, CURR:DC, CURR:AC, RES, FRES.
+        """
+        if value <= 0:
+            raise ValueError("NPLC must be positive")
+        functions = [
+            "VOLT:DC",
+            "VOLT:AC",
+            "CURR:DC",
+            "CURR:AC",
+            "RES",
+            "FRES",
+        ]
         for func in functions:
             try:
                 self.write(f":SENS:{func}:NPLC {value}")
-            except:
-                pass  # Some functions might not support NPLC
+            except Exception:
+                # Some functions may not be available depending on mode/options
+                continue
+
+    # --- Global digital filter configuration ---
+    @property
+    def filter_enabled(self) -> bool:
+        """Return True if the averaging filter is enabled for DC voltage.
+
+        Used as a representative; setter applies to all functions.
+        """
+        try:
+            resp = self.query(":SENS:VOLT:DC:AVER:STAT?")
+        except Exception:
+            return False
+        return helper_methods.val_to_bool(resp)
+
+    @filter_enabled.setter
+    def filter_enabled(self, value: bool) -> None:
+        state = "ON" if helper_methods.val_to_bool(value) else "OFF"
+        functions = ["VOLT:DC", "VOLT:AC", "CURR:DC", "CURR:AC", "RES", "FRES", "TEMP"]
+        for func in functions:
+            try:
+                self.write(f":SENS:{func}:AVER:STAT {state}")
+            except Exception:
+                continue
 
     @property
-    def trigger_source(self) -> str:
-        """Get the trigger source."""
-        return self.query(":TRIG:SOUR?").strip()
+    def filter_type(self) -> str:
+        """Get digital filter type ("REP" or "MOV") for DC voltage.
 
-    @trigger_source.setter
-    def trigger_source(self, source: str) -> None:
-        """Set the trigger source (IMM, BUS, EXT, etc.)."""
-        valid_sources = ["IMM", "BUS", "EXT", "TIMER"]
-        if source.upper() not in valid_sources:
-            raise ValueError(f"Invalid trigger source. Valid: {valid_sources}")
-        self.write(f":TRIG:SOUR {source.upper()}")
+        Setter applies chosen type across all functions.
+        """
+        try:
+            resp = self.query(":SENS:VOLT:DC:AVER:TCON?")
+            return resp.strip().upper()
+        except Exception:
+            return "MOV"
+
+    @filter_type.setter
+    def filter_type(self, mode: str) -> None:
+        mode = mode.upper()
+        if mode not in ("REP", "MOV"):
+            raise ValueError("filter_type must be 'REP' or 'MOV'")
+        functions = ["VOLT:DC", "VOLT:AC", "CURR:DC", "CURR:AC", "RES", "FRES", "TEMP"]
+        for func in functions:
+            try:
+                self.write(f":SENS:{func}:AVER:TCON {mode}")
+            except Exception:
+                continue
 
     @property
-    def math_function(self) -> str:
-        """Get the math function state."""
-        return self.query(":CALC:STAT?").strip()
+    def filter_count(self) -> int:
+        """Get averaging filter count for DC voltage."""
+        try:
+            return int(float(self.query(":SENS:VOLT:DC:AVER:COUN?") or 0))
+        except Exception:
+            return 10
 
-    @math_function.setter
-    def math_function(self, function: str) -> None:
-        """Set the math function (NULL, DB, DBM, AVERAGE, LIMIT, etc.)."""
-        valid_functions = ["NULL", "DB", "DBM", "AVERAGE", "LIMIT"]
-        if function.upper() == "OFF":
-            self.write(":CALC:STAT OFF")
-        elif function.upper() in valid_functions:
-            self.write(f":CALC:FUNC {function.upper()}")
-            self.write(":CALC:STAT ON")
-        else:
-            raise ValueError(f"Invalid math function. Valid: {valid_functions} or OFF")
+    @filter_count.setter
+    def filter_count(self, count: int) -> None:
+        if not 1 <= int(count) <= 100:
+            raise ValueError("filter_count must be between 1 and 100")
+        functions = ["VOLT:DC", "VOLT:AC", "CURR:DC", "CURR:AC", "RES", "FRES", "TEMP"]
+        for func in functions:
+            try:
+                self.write(f":SENS:{func}:AVER:COUN {int(count)}")
+            except Exception:
+                continue
+
+    # --- Autozero ---
+    @property
+    def autozero(self) -> bool:
+        """Return True if autozero is enabled.
+
+        Maps to :SYST:AZER:STAT? (ON/OFF or 1/0 depending on firmware).
+        """
+        try:
+            resp = self.query(":SYST:AZER:STAT?")
+        except Exception:
+            return False
+        return helper_methods.val_to_bool(resp)
+
+    @autozero.setter
+    def autozero(self, value: bool) -> None:
+        """Enable or disable autozero.
+
+        True -> ON, False -> OFF.
+        """
+        state = "ON" if helper_methods.val_to_bool(value) else "OFF"
+        self.write(f":SYST:AZER:STAT {state}")
 
     def read_measurement(self) -> List[float]:
-        """
-        Reads a measurement value.
-        """
+        """Trigger a reading using current configuration and return parsed values."""
         curRead: str = self.query(":READ?")
-        return [float(x) for x in curRead.split(",")]
+        return [float(x) for x in curRead.split(",") if x.strip()]
 
-    def measure_voltage_dc(self) -> List[float]:
-        """
-        Performs a DC voltage measurement.
+    # --- Configuration helpers (no per-call NPLC) ---
+    def configure_voltage_dc(self, range: Optional[float] = None) -> None:
+        """Configure DC voltage function.
 
-        Returns
-        -------
-        List[float]
-            Measured DC voltage values.
+        range < 0 -> autorange; nplc sets integration time if provided.
         """
         self.write(":CONF:VOLT:DC")
-        # Read the DC voltage measurement
-        return self.read_measurement()
+        if range is not None:
+            if range < 0:
+                self.write(":SENS:VOLT:DC:RANG:AUTO ON")
+            else:
+                self.write(f":SENS:VOLT:DC:RANG {range}")
 
-    def measure_voltage_ac(self) -> List[float]:
-        """
-        Performs an AC voltage measurement.
-
-        Returns
-        -------
-        List[float]
-            Measured AC voltage values.
-        """
+    def configure_voltage_ac(self, range: Optional[float] = None) -> None:
         self.write(":CONF:VOLT:AC")
-        return self.read_measurement()
+        if range is not None:
+            if range < 0:
+                self.write(":SENS:VOLT:AC:RANG:AUTO ON")
+            else:
+                self.write(f":SENS:VOLT:AC:RANG {range}")
 
-    def measure_current_dc(self, range: Optional[float] = None) -> List[float]:
-        """
-        Performs a DC current measurement.
-
-        Parameters
-        ----------
-        range : float, optional
-            Measurement range. If None, uses current setting.
-
-        Returns
-        -------
-        List[float]
-            Measured DC current values in Amperes.
-        """
+    def configure_current_dc(self, range: Optional[float] = None) -> None:
+        self.write(":CONF:CURR:DC")
         if range is not None:
             if range < 0:
                 self.write(":SENS:CURR:DC:RANG:AUTO ON")
             else:
                 self.write(f":SENS:CURR:DC:RANG {range}")
-        
-        self.write(":CONF:CURR:DC")
-        return self.read_measurement()
 
-    def measure_current_ac(self, range: Optional[float] = None) -> List[float]:
-        """
-        Performs an AC current measurement.
-
-        Parameters
-        ----------
-        range : float, optional
-            Measurement range. If None, uses current setting.
-
-        Returns
-        -------
-        List[float]
-            Measured AC current values in Amperes.
-        """
+    def configure_current_ac(self, range: Optional[float] = None) -> None:
+        self.write(":CONF:CURR:AC")
         if range is not None:
             if range < 0:
                 self.write(":SENS:CURR:AC:RANG:AUTO ON")
             else:
                 self.write(f":SENS:CURR:AC:RANG {range}")
-        
-        self.write(":CONF:CURR:AC")
-        return self.read_measurement()
 
-    def measure_resistance_2w(self, range: Optional[float] = None) -> List[float]:
-        """
-        Performs a 2-wire resistance measurement.
-
-        Parameters
-        ----------
-        range : float, optional
-            Measurement range. If None, uses current setting.
-
-        Returns
-        -------
-        List[float]
-            Measured resistance values in Ohms.
-        """
+    def configure_resistance_2w(self, range: Optional[float] = None) -> None:
+        self.write(":CONF:RES")
         if range is not None:
             if range < 0:
                 self.write(":SENS:RES:RANG:AUTO ON")
             else:
                 self.write(f":SENS:RES:RANG {range}")
-        
-        self.write(":CONF:RES")
-        return self.read_measurement()
 
-    def measure_resistance_4w(self, range: Optional[float] = None) -> List[float]:
-        """
-        Performs a 4-wire resistance measurement.
-
-        Parameters
-        ----------
-        range : float, optional
-            Measurement range. If None, uses current setting.
-
-        Returns
-        -------
-        List[float]
-            Measured resistance values in Ohms.
-        """
+    def configure_resistance_4w(self, range: Optional[float] = None) -> None:
+        self.write(":CONF:FRES")
         if range is not None:
             if range < 0:
                 self.write(":SENS:FRES:RANG:AUTO ON")
             else:
                 self.write(f":SENS:FRES:RANG {range}")
-        
-        self.write(":CONF:FRES")
+    # --- Measurement helpers (assume already configured) ---
+    def measure_voltage_dc(self) -> List[float]:
+        """Read DC voltage using current configuration.
+
+        Call configure_voltage_dc once before a loop of measurements.
+        """
         return self.read_measurement()
 
-    def measure_frequency(self, gate_time: Optional[float] = None) -> List[float]:
-        """
-        Performs a frequency measurement.
-
-        Parameters
-        ----------
-        gate_time : float, optional
-            Gate time for frequency measurement (0.01 to 1 second).
-
-        Returns
-        -------
-        List[float]
-            Measured frequency values in Hz.
-        """
-        if gate_time is not None:
-            if not 0.01 <= gate_time <= 1.0:
-                raise ValueError("Gate time must be between 0.01 and 1.0 seconds")
-            self.write(f":SENS:FREQ:GATE:TIME {gate_time}")
-        
-        self.write(":CONF:FREQ")
+    def measure_voltage_ac(self) -> List[float]:
         return self.read_measurement()
 
-    def measure_period(self, gate_time: Optional[float] = None) -> List[float]:
-        """
-        Performs a period measurement.
-
-        Parameters
-        ----------
-        gate_time : float, optional
-            Gate time for period measurement (0.01 to 1 second).
-
-        Returns
-        -------
-        List[float]
-            Measured period values in seconds.
-        """
-        if gate_time is not None:
-            if not 0.01 <= gate_time <= 1.0:
-                raise ValueError("Gate time must be between 0.01 and 1.0 seconds")
-            self.write(f":SENS:PER:GATE:TIME {gate_time}")
-        
-        self.write(":CONF:PER")
+    def measure_current_dc(self) -> List[float]:
         return self.read_measurement()
 
-    def measure_temperature(self, probe_type: str = "TC") -> List[float]:
-        """
-        Performs a temperature measurement.
-
-        Parameters
-        ----------
-        probe_type : str, optional
-            Type of temperature probe ("TC" for thermocouple, "RTD" for RTD).
-
-        Returns
-        -------
-        List[float]
-            Measured temperature values in Celsius.
-        """
-        if probe_type.upper() == "TC":
-            self.write(":CONF:TEMP TC")
-        elif probe_type.upper() == "RTD":
-            self.write(":CONF:TEMP RTD")
-        else:
-            raise ValueError("probe_type must be 'TC' or 'RTD'")
-        
+    def measure_current_ac(self) -> List[float]:
         return self.read_measurement()
 
-    def measure_capacitance(self, range: Optional[float] = None) -> List[float]:
-        """
-        Performs a capacitance measurement.
+    def measure_resistance_2w(self) -> List[float]:
+        return self.read_measurement()
 
-        Parameters
-        ----------
-        range : float, optional
-            Measurement range. If None, uses current setting.
-
-        Returns
-        -------
-        List[float]
-            Measured capacitance values in Farads.
-        """
-        if range is not None:
-            if range < 0:
-                self.write(":SENS:CAP:RANG:AUTO ON")
-            else:
-                self.write(f":SENS:CAP:RANG {range}")
-        
-        self.write(":CONF:CAP")
+    def measure_resistance_4w(self) -> List[float]:
         return self.read_measurement()
 
     def configure_2w_resistance(

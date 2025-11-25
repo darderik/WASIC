@@ -11,9 +11,8 @@ from wasic_test import use_as_library
 # Import for forcing initialization of tasks
 from addons.tasks import *
 import threading
-
-
-def main():
+from wasic_test import use_as_library
+def init_wasic():
     # Create the directory if it doesn't exist
     os.makedirs("data", exist_ok=True)
     os.environ["STREAMLIT_SERVER_HEADLESS"] = "true"
@@ -38,14 +37,20 @@ def main():
     logging.info("Starting WASIC...")
 
     script_path = os.path.abspath("streamlit_app.py")
+    return script_path
 
 
+def main():
+    script_path=init_wasic()
+    # Begin override code --------- WASIC as library mode -----
+    #tasks = Tasks()
+    #tasks.run_task("R Cube Measurement")
+#    use_as_library()
 
 
-    ## DEBUG PURPOSES
+    # End override code -----------
 
-    use_as_library()
-    
+
     streamlit.web.bootstrap.run(script_path, False, [], {})
 
 if __name__ == "__main__":

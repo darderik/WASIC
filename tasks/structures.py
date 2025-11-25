@@ -15,6 +15,7 @@ class AxisMeta:
     label: str = field(default="", metadata={"help": "Axis label (e.g. 'Voltage')."})
     unit: str = field(default="", metadata={"help": "Unit string (e.g. 'V')."})
     scale: str = field(default="linear", metadata={"help": "Scale: 'linear' or 'log'."})
+    description: str = field(default="", metadata={"help": "Optional longer description."})
 
 
 @dataclass
@@ -93,7 +94,7 @@ class ChartData:
         x_series: Optional[Series] = None,
         y_series: Optional[Series] = None,
         math_formula_x: Optional[Callable[[Any], float]] = None,
-        math_formula_y: Optional[Callable[[Any], float]] = None,
+        math_formula_y: Optional[Callable[[Any], Any]] = None,
     ):
         self.name = name
         self.schema_version = schema_version

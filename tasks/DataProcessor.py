@@ -84,7 +84,10 @@ class DataProcessor:
             target.clear()
             for value in raw:
                 new_value = formula(value)
-                target.append(new_value)
+                if isinstance(new_value, float):
+                    target.append(new_value)
+                elif isinstance(new_value, list):
+                    target.extend(new_value)
         elif cur_index < raw_len and not pop:
             for i in range(cur_index, raw_len):
                 value = raw[i]

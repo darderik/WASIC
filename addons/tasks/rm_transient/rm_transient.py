@@ -55,8 +55,10 @@ def rm_transient(task_obj: Task) -> None:
     data.append(transient_fall_chart)
 
     # Add Labels
-    transient_rise_chart.y_series.meta.label = "Raw values are 2D arrays which represent the waveform data. The rise time (processed) is calculated from these waveforms."
-    transient_fall_chart.y_series.meta.label = "Raw values are 2D arrays which represent the waveform data. The fall time (processed) is calculated from these waveforms."
+    transient_rise_chart.y_series.meta.description = "Raw values are 2D arrays which represent the waveform data. The rise time (processed) is calculated from these waveforms."
+    transient_fall_chart.y_series.meta.description = "Raw values are 2D arrays which represent the waveform data. The fall time (processed) is calculated from these waveforms."
+    transient_rise_chart.y_series.meta.label = "Voltage Rise Time (s)"
+    transient_fall_chart.y_series.meta.label = "Voltage Fall Time (s)"
     transient_fall_chart.y_series.meta.unit = "s"
     transient_rise_chart.y_series.meta.unit = "s"
     transient_fall_chart.y_series.meta.scale = "linear"

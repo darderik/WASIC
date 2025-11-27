@@ -1,271 +1,259 @@
 from easy_scpi import Instrument
 from instruments import SCPI_Info, property_info
-from typing import List
+from typing import List, Optional
 from config import Config
 from pyvisa.constants import StopBits
-from numpy.typing import NDArray
-import numpy as np
-class NV34420(Instrument):
+from .SCPIInstrumentTemplate import SCPIInstrumentTemplate
+
+class NV34420(SCPIInstrumentTemplate):
     """
-    NV34420 Class
-    ============
-    Class to configure and use the Keysight 34420A Nano Volt/Micro Ohm Meter via SCPI.
+    Keysight 34420A NanoVolt/Micro-Ohm (NV34420)
+    ============================================
+    SCPI wrapper for DC voltage (Ch1/Ch2, ratio, difference), 2W/4W resistance,
+    NPLC, null, trigger, and filter controls.
 
-    Features:
-    ---------
-    - Perform voltage and resistance measurements.
-    - Configure voltage measurement parameters such as range and integration time.
-    - Configure resistance measurement parameters including range, integration time,
-      and optional digital filtering for 4-wire measurements.
-
-    Properties:
-    -----------
-    voltage_range : float
-        Configured voltage measurement range.
-    integration_time : float
-        Integration time (NPLC) for voltage measurements.
-    resistance_range : float
-        Configured resistance measurement range.
-
-    Methods:
-    --------
-    measure_voltage() -> float:
-        Performs a voltage measurement.
-    measure_resistance() -> float:
-        Performs a resistance measurement.
-    configure_resistance(range: float, nplc: float, filter_ON: bool, filter_type: str, filter_count: int) -> None:
-        Configures the meter for 4-wire resistance measurement.
+    Manual highlights reflected here:
+      - Channels via SENS1:/SENS2: for volts config
+      - NPLC choices: 0.02|0.2|1|2|10|20|100|200
+      - Ratio/Diff queries: MEAS:VOLT:DC:RATIO? / :DIFF?
+      - Avoid digital filter in remote; analog filter limited to 1/10/100 mV & T/C
     """
 
-    def __init__(self, scpi_info: SCPI_Info, **kwargs):
-        """
-        Initializes the NV34420 object with the specified SCPI parameters.
-
-        Parameters
-        ----------
-        scpi_info : SCPI_Info
-            Object containing port and baud rate information for the connection.
-        """
-        curPort: str = scpi_info.port
-        curBaudRate: int = scpi_info.baud_rate
+    def __init__(self, scpi_info: SCPI_Info, **kwargs) -> None:
         super().__init__(
-            port=curPort,
-            baud_rate=curBaudRate,
-            read_termination="\n",
+            scpi_info,
+            timeout=kwargs.get("timeout", 1000),
+            handshake=kwargs.get("handshake", True),
             write_termination="\n",
-            stop_bits=StopBits.two,
-            timeout=1000,
+            read_termination="\n",
             backend="@py",
             encoding="latin-1",
+            stop_bits=StopBits.two,  # 34420A ships RS-232 default 2 stop bits
         )
         self.connect(explicit_remote=1)
-        self.reset()
+
+        # Quality-of-life defaults
         self.disable_beep()
         self.init_properties()
 
+    # ---------------- Properties panel (for your UI) ----------------
     def init_properties(self) -> None:
-        """
-        Initializes the instrument properties for use in configuration.
-        """
-        self.properties_list: List[property_info] = [
-            property_info(
-                "Voltage Range",
-                float,
-                lambda: self.voltage_range,
-                lambda x: setattr(self, "voltage_range", x),
-            ),
-            property_info(
-                "Integration Time",
-                float,
-                lambda: self.integration_time,
-                lambda x: setattr(self, "integration_time", x),
-            ),
-            property_info(
-                "Resistance Range",
-                float,
-                lambda: self.resistance_range,
-                lambda x: setattr(self, "resistance_range", x),
-            ),
+        self.properties_list: List['property_info'] = [
+            property_info("Voltage Range (Ch1)", float,
+                          lambda: self.get_voltage_range(1),
+                          lambda x: self.set_voltage_range(x, 1)),
+            property_info("Voltage Range (Ch2)", float,
+                          lambda: self.get_voltage_range(2),
+                          lambda x: self.set_voltage_range(x, 2)),
+            property_info("Integration Time (NPLC)", float,
+                          self.get_nplc,
+                          self.set_nplc),
+            property_info("Resistance Range (4W)", float,
+                          self.get_resistance_range,
+                          self.set_resistance_range),
         ]
 
-    @property
-    def voltage_range(self) -> float:
-        """
-        Returns the configured voltage measurement range.
-        """
-        return float(self.query(":SENS:VOLT:DC:RANG?"))
+    # ---------------- Helpers ----------------
+    def _sensesel(self, channel: int) -> str:
+        if channel not in (1, 2):
+            raise ValueError("channel must be 1 or 2")
+        return f"SENS{channel}:"
 
-    @voltage_range.setter
-    def voltage_range(self, value: float) -> None:
-        """
-        Sets the voltage measurement range.
-        """
-        self.write(f":SENS:VOLT:DC:RANG {value}")
+    def _validate_nplc(self, nplc: float) -> None:
+        allowed = {0.02, 0.2, 1, 2, 10, 20, 100, 200}
+        if nplc not in allowed:
+            raise ValueError(f"nplc must be one of {sorted(allowed)}")
 
-    @property
-    def integration_time(self) -> float:
-        """
-        Returns the integration time (in NPLC) for voltage measurements.
-        """
-        return float(self.query(":SENS:VOLT:DC:NPLC?"))
-
-    @integration_time.setter
-    def integration_time(self, value: float) -> None:
-        """
-        Sets the integration time (in NPLC) for voltage measurements.
-        """
-        self.write(f":SENS:VOLT:DC:NPLC {value}")
-
-    @property
-    def resistance_range(self) -> float:
-        """
-        Returns the configured resistance measurement range.
-        """
-        return float(self.query(":SENS:FRES:RANG?"))
-
-    @resistance_range.setter
-    def resistance_range(self, value: float) -> None:
-        """
-        Sets the resistance measurement range.
-        """
-        self.write(f":SENS:FRES:RANG {value}")
-
+    # ---------------- Core/basic ----------------
     def disable_beep(self) -> None:
-        self.write("system:beeper:state 0")
+        # Manual lists SYS menu options; beeper cmd naming varies by family.
+        # Keep your working form:
+        self.write("SYSTem:BEEPer:STATe 0")
 
-    def set_remote(self) -> None:
-        self.write("system:remote")
+    # ---------------- Voltage config (per channel) ----------------
+    def get_voltage_range(self, channel: int = 1) -> float:
+        return float(self.query(f"{self._sensesel(channel)}VOLT:DC:RANG?"))
 
-    def measure_voltage(self,config: bool =False) -> NDArray:
-        """
-        Performs a voltage measurement.
+    def set_voltage_range(self, value: float, channel: int = 1) -> None:
+        self.write(f"{self._sensesel(channel)}VOLT:DC:RANG {value}")
 
-        Returns
-        -------
-        float
-            Measured voltage value or NaN on error.
-        """
-        try:
-            if (config):
-                self.write(":CONF:VOLT")
-            return self.read_meas()
-        except Exception:
-            return np.array('nan')
+    def set_voltage_autorange(self, on: bool = True, channel: int = 1) -> None:
+        self.write(f"{self._sensesel(channel)}VOLT:DC:RANG:AUTO {'ON' if on else 'OFF'}")
 
-    def measure_resistance(self) -> NDArray:
-        """
-        Performs a resistance measurement.
+    def get_nplc(self) -> float:
+        # NPLC is shared across functions; use VOLT as canonical
+        return float(self.query("SENS:VOLT:DC:NPLC?"))
 
-        Returns
-        -------
-        float
-            Measured resistance value or NaN on error.
-        """
-        try:
-            self.write(":CONF:FRES")
-            return self.read_meas()
-        except Exception:
-            return np.array('nan')
+    def set_nplc(self, nplc: float) -> None:
+        self._validate_nplc(nplc)
+        # Set for relevant funcs
+        self.write(f"SENS:VOLT:DC:NPLC {nplc}")
+        self.write(f"SENS:FRES:NPLC {nplc}")
+        self.write(f"SENS:TEMP:NPLC {nplc}")
 
-    def read_meas(self) -> NDArray:
-        try:
-            result: str = self.query(":READ?")
-            if "," in result:
-                return np.array(self._read_many(result))
-            else:
-                return np.array(self._read_single(result))
-        except Exception:
-            # Return NaN if the query fails
-            return  np.array(float('nan'))
+    # ---------------- Resistance (4W primary) ----------------
+    def get_resistance_range(self) -> float:
+        return float(self.query("SENS:FRES:RANG?"))
 
-    def _read_single(self, result: str) -> float:
-        try:
-            return float(result)
-        except (ValueError, TypeError):
-            # Return NaN if the read fails or the response cannot be parsed
-            return float('nan')
+    def set_resistance_range(self, value: float) -> None:
+        self.write(f"SENS:FRES:RANG {value}")
 
-    def _read_many(self, result: str) -> List[float]:
-        try:
-            str_values = result.split(',')
-            return [float(val) for val in str_values if val.strip()]
-        except (ValueError, TypeError):
-            # Return empty list if the read fails or the response cannot be parsed
-            return []
+    def set_resistance_autorange(self, on: bool = True) -> None:
+        self.write(f"SENS:FRES:RANG:AUTO {'ON' if on else 'OFF'}")
 
-    def configure_resistance(
-        self,
-        range: float = -1,
-        nplc: float = 1,
-        filter_ON: bool = False,
-        filter_type: str = "MOV",
-        filter_count: int = 1,
-    ) -> None:
-        """
-        Configures the meter for 4-wire resistance measurement.
+    def set_offset_comp(self, on: bool = True) -> None:
+        self.write(f"SENS:FRES:OCOMp {'ON' if on else 'OFF'}")
 
-        Parameters
-        ----------
-        range : float, optional
-            Resistance range value. If negative, auto ranging is enabled.
-        nplc : float, optional
-            Number of power line cycles for integration (affects noise and speed).
-        filter_ON : bool, optional
-            Whether to enable the digital filter.
-        filter_type : str, optional
-            Type of filter to use (e.g., "MOV").
-        filter_count : int, optional
-            Number of readings for the digital filter averaging.
-        """
-        self.write("SENSe:FRESistance:OCOMpensated ON")
-        if filter_ON:
-            self.write(f":SENS:FRES:FILT:TYPE {filter_type}")
-            self.write(f":SENS:FRES:FILT:COUNT {filter_count}")
-            self.write(":SENS:FRES:FILT:STAT ON")
-        self.write(f":SENS:FRES:NPLC {nplc}")
-        if range < 0:
-            self.write(":SENS:FRES:RANG:AUTO ON")
+    def set_low_power_ohms(self, on: bool = False) -> None:
+        # 4W only
+        self.write(f"SENS:FRES:POW:LIM {'ON' if on else 'OFF'}")
+
+    def set_voltage_limited_ohms(self, on: bool = False, limit_mV: Optional[float] = None) -> None:
+        self.write(f"SENS:FRES:VOLT:LIM {'ON' if on else 'OFF'}")
+        if on and limit_mV is not None:
+            # allowed: 20 mV, 100 mV, 500 mV
+            if limit_mV not in (20, 100, 500):
+                raise ValueError("limit_mV must be 20, 100, or 500")
+            self.write(f"SENS:FRES:VOLT:LIM:VAL {limit_mV/1000.0}")
+
+    # ---------------- Filters (use cautiously in remote) ----------------
+    def filters_off(self) -> None:
+        self.write("INP:FILT:STAT OFF")  # digital & analog off (instrument interprets)
+    def set_analog_filter(self, on: bool = False) -> None:
+        # Analog filter (only 1/10/100 mV ranges & TC). Use sparingly for line noise.
+        self.write(f"INP:FILT:STAT {'ON' if on else 'OFF'}")
+        if on:
+            self.write("INP:FILT:TYPE ANAlog")
+    def set_digital_filter(self, mode: str = "OFF") -> None:
+        # {OFF|FAST|MED|SLOW}; discouraged for remote per manual
+        m = mode.upper()
+        if m == "OFF":
+            self.write("INP:FILT:STAT OFF")
         else:
-            self.write(f":SENS:FRES:RANG {range}")
-        self.write(":CONF:FRES")
+            self.write("INP:FILT:STAT ON")
+            self.write("INP:FILT:TYPE DIGital")
+            self.write(f"INP:FILT:DIG:RESP { {'FAST':'FAST','MED':'MED','SLOW':'SLOW'}[m] }")
 
-    def configure_voltage(self, range: float = -1, nplc: float = 1) -> None:
-        """
-        Configures the meter for voltage measurement.
-        Parameters
-        ----------
-        range : float, optional
-            Voltage range value. If negative, auto ranging is enabled.
-        nplc : float, optional
-            Number of power line cycles for integration (affects noise and speed).
-        """
-        self.integration_time = nplc
-        if range < 0:
-            self.write(":SENS:VOLT:DC:RANG:AUTO ON")
-        else:
-            self.voltage_range = range
-        self.write(":CONF:VOLT")
-    def set_sample_count(self, count: int = 1) -> None:
-        """
-        Sets the sample count for measurements.
-        Parameters
-        ----------
-        count : int, optional
-            Number of samples to average per measurement.
-        """
-        self.write(f"sample:count {count}")
+    # ---------------- Null (per channel/function) ----------------
+    def set_voltage_null(self, channel: int, on: bool, value: Optional[float] = None) -> None:
+        base = f"{self._sensesel(channel)}VOLT:DC:NULL"
+        self.write(f"{base} {'ON' if on else 'OFF'}")
+        if on and value is not None:
+            self.write(f"{base} {value}")
+
+    def set_resistance_null(self, on: bool, value: Optional[float] = None) -> None:
+        base = "SENS:FRES:NULL"
+        self.write(f"{base} {'ON' if on else 'OFF'}")
+        if on and value is not None:
+            self.write(f"{base} {value}")
+
+    # ---------------- Triggering ----------------
     def trigger_configure(self, source: str = "IMM", delay: float = 0.0, count: int = 1) -> None:
         """
-        Configures the trigger settings for measurements.
-        Parameters
-        ----------
-        source : str, optional
-            Trigger source (e.g., "IMM" for immediate).
-        delay : float, optional
-            Delay time in seconds before the measurement starts after the trigger.
+        source: 'IMM' | 'BUS' | 'EXT'
+        delay: seconds
+        count: triggers per reading sequence
         """
-        self.write(f":TRIG:SOUR {source}")
-        self.write(f":TRIG:DEL {delay}")
-        self.write(f":TRIG:COUN {count}")
+        src = source.upper()
+        self.write(f"TRIG:SOUR {src}")
+        self.write(f"TRIG:DEL {delay}")
+        self.write(f"TRIG:COUN {count}")
+
+    def set_sample_count(self, count: int = 1) -> None:
+        # number of samples per trigger
+        self.write(f"SAMP:COUN {count}")
+
+    # ---------------- Measurements ----------------
+    def read_measurement(self) -> List[float]:
+        """
+        Reads a measurement value.
+        """
+        curRead: str = self.query(":READ?")
+        return [float(x) for x in curRead.split(",")]
+
+    def measure_voltage(self, channel: int = 1, configure: bool = False, sample_count: int = 1) -> List[float]:
+        if configure:
+            # Use SENS commands instead of CONF to avoid resetting sample count
+            self.write(f"{self._sensesel(channel)}FUNC 'VOLT:DC'")
+        if sample_count > 1:
+            self.set_sample_count(sample_count)
+        return self.read_measurement()
+
+    def measure_resistance_4w(self, configure: bool = True, sample_count: int = 1) -> List[float]:
+        if configure:
+            # Use SENS commands instead of CONF to avoid resetting sample count
+            self.write("SENS:FUNC 'FRES'")
+        if sample_count > 1:
+            self.set_sample_count(sample_count)
+        return self.read_measurement()
+
+    def measure_ratio(self, sample_count: int = 1) -> List[float]:
+        """Voltage ratio Ch1/Ch2."""
+        # Use SENS commands instead of CONF to avoid resetting sample count
+        self.write("SENS:FUNC 'VOLT:DC:RATIO'")
+        if sample_count > 1:
+            self.set_sample_count(sample_count)
+        return self.read_measurement()
+
+    def measure_difference(self, sample_count: int = 1) -> List[float]:
+        """Voltage difference Ch1-Ch2 (uses channel nulls)."""
+        # Use SENS commands instead of CONF to avoid resetting sample count
+        self.write("SENS:FUNC 'VOLT:DC:DIFF'")
+        if sample_count > 1:
+            self.set_sample_count(sample_count)
+        return self.read_measurement()
+
+    def measure_voltage_with_params(self, channel: int = 1, range_val: Optional[float] = None, 
+                                   nplc: Optional[float] = None, sample_count: int = 1) -> List[float]:
+        """Measure voltage with optional range and NPLC settings."""
+        # Set function
+        self.write(f"{self._sensesel(channel)}FUNC 'VOLT:DC'")
+        
+        # Set range if provided
+        if range_val is not None:
+            if range_val < 0:
+                self.write(f"{self._sensesel(channel)}VOLT:DC:RANG:AUTO ON")
+            else:
+                self.write(f"{self._sensesel(channel)}VOLT:DC:RANG {range_val}")
+        
+        # Set NPLC if provided
+        if nplc is not None:
+            self._validate_nplc(nplc)
+            self.write(f"{self._sensesel(channel)}VOLT:DC:NPLC {nplc}")
+        
+        # Set sample count if > 1
+        if sample_count > 1:
+            self.set_sample_count(sample_count)
+        
+        return self.read_measurement()
+
+    def measure_resistance_with_params(self, range_val: Optional[float] = None, 
+                                      nplc: Optional[float] = None, sample_count: int = 1) -> List[float]:
+        """Measure 4W resistance with optional range and NPLC settings."""
+        # Set function
+        self.write("SENS:FUNC 'FRES'")
+        
+        # Set range if provided
+        if range_val is not None:
+            if range_val < 0:
+                self.write("SENS:FRES:RANG:AUTO ON")
+            else:
+                self.write(f"SENS:FRES:RANG {range_val}")
+        
+        # Set NPLC if provided
+        if nplc is not None:
+            self._validate_nplc(nplc)
+            self.write(f"SENS:FRES:NPLC {nplc}")
+        
+        # Set sample count if > 1
+        if sample_count > 1:
+            self.set_sample_count(sample_count)
+        
+        return self.read_measurement()
+
+    # ---------------- System / status ----------------
+    def preset(self) -> None:
+        self.write("SYST:PRESET")
+
 # Register the instrument class with its alias
 Config().add_instrument_extension(("34420A", NV34420))

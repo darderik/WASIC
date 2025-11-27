@@ -7,13 +7,12 @@ from config import Config
 from connections.utilities import detect_baud_rate
 from tasks import Tasks
 from connections import Connections
-
+from wasic_test import use_as_library
 # Import for forcing initialization of tasks
 from addons.tasks import *
 import threading
-
-
-def main():
+from wasic_test import use_as_library
+def init_wasic():
     # Create the directory if it doesn't exist
     os.makedirs("data", exist_ok=True)
     os.environ["STREAMLIT_SERVER_HEADLESS"] = "true"
@@ -37,17 +36,23 @@ def main():
 
     logging.info("Starting WASIC...")
 
-    # Streamlit boot
     script_path = os.path.abspath("streamlit_app.py")
-    # New thread test function
-    # Create and start a new thread to run test_function
-    #    test_thread.start()
-    #detect_baud_rate("COM10")
-    #Connections().fetch_all_instruments()
-    
-    
-    #Tasks().run_task("Noise 9V RM - NV34420")
+    return script_path
+
+
+def main():
+    script_path=init_wasic()
+    # Begin override code --------- WASIC as library mode -----
+    #tasks = Tasks()
+    #tasks.run_task("R Cube Measurement")
+#    use_as_library()
+
+
+    # End override code -----------
+
+
     streamlit.web.bootstrap.run(script_path, False, [], {})
 
 if __name__ == "__main__":
     main()
+    

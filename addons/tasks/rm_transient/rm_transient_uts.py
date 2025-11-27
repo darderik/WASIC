@@ -1,50 +1,88 @@
-from typing import List, Optional
 import numpy as np
-from scipy.interpolate import interp1d
+import logging
 
+logger = logging.getLogger(__name__)
 
-def compute_transient_time(
-    transient_pack: List[List[float]],
-    threshold: Optional[float] = None,
-) -> float:
-    times = np.array(transient_pack[0])
-    voltages = np.array(transient_pack[1])
-    pwl_fit = interp1d(voltages, times, kind="linear", fill_value="extrapolate")
-    char_time = pwl_fit(threshold) if threshold is not None else np.nan
-    return float(char_time)
-
-
-def calculate_rise_time(transient_pack: List[List[float]]) -> float:
+def calculate_rise_time(transient):
     """
-    Calculates the rise time of a transient signal.
-
-    Args:
-        transient_pack (List[List[float]]): A list containing two lists:
-            - [0]: Time values
-            - [1]: Voltage values
-
-    Returns:
-        float: The rise time (time difference between the start and end of the rise).
-               Returns NaN if no valid rise is detected.
+    Placeholder for calculating rise time from transient data.
+    transient is expected to be [t, V] where t is time array, V is voltage array.
     """
-    high_threshold = 1
-    zero_cross = compute_transient_time(transient_pack, threshold=high_threshold)
-    return zero_cross
+    # Implement rise time calculation logic here
+    # For example, find time from 10% to 90% of max voltage
+    t, V = transient
+    if not t or not V:
+        return 0.0
+    # Placeholder: return a dummy value
+    hi_thresh = 4.5
+    res = transient_value_extractor(transient, hi_thresh)
+    return res 
 
-
-def calculate_fall_time(transient_pack: List[List[float]]) -> float:
+def calculate_fall_time(transient) -> float:
     """
-    Calculates the fall time of a transient signal.
-
-    Args:
-        transient_pack (List[List[float]]): A list containing two lists:
-            - [0]: Time values
-            - [1]: Voltage values
-
-    Returns:
-        float: The fall time (time difference between the start and end of the fall).
-               Returns NaN if no valid fall is detected.
+    Placeholder for calculating fall time from transient data.
+    transient is expected to be [t, V] where t is time array, V is voltage array.
     """
-    hi_threshold = 4
-    high_cross = compute_transient_time(transient_pack, threshold=hi_threshold)
-    return high_cross
+    t, V = transient
+    if not t or not V:
+        return 0.0
+    lo_thresh = 0.5
+    res: float = transient_value_extractor(transient, lo_thresh)
+    return res
+def transient_value_extractor(transient, value:float) -> float:
+        """
+        Extracts the voltage value from the transient data.
+        transient is expected to be [t, V] where t is time array, V is voltage array.
+        """
+        t, V = transient
+        first_val = V[0] if V else 0.0
+        if (first_val > value):
+            # Fall transient
+            np_V = np.array(V)
+            above_threshold_indices = np.where(np_V >= value)[0]
+            if len(above_threshold_indices) == 0:
+                logger.warning("No values above threshold %.3f found in fall transient.", value)
+                return np.nan
+            last_above_index = above_threshold_indices[-1]
+            below_threshold_indices = np.where(np_V < value)[0]
+            below_after_indices = below_threshold_indices[below_threshold_indices > last_above_index]
+            if len(below_after_indices) == 0:
+                logger.warning("No values below threshold %.3f after last above-threshold index in fall transient.", value)
+                return np.nan
+            first_below_index = below_after_indices[0]
+            V1 = np_V[last_above_index]
+            V2 = np_V[first_below_index]
+            t1 = t[last_above_index]
+            t2 = t[first_below_index]
+            if V2 == V1:
+                return t1
+            lin_fit_res = lin_fit(value, [V1, V2], [t1, t2])
+        else:
+            # Rise transient
+            np_V = np.array(V)
+            above_threshold_indices = np.where(np_V >= value)[0]
+            if len(above_threshold_indices) == 0:
+                logger.warning("No values above threshold %.3f found in rise transient.", value)
+                return np.nan
+            first_above_index = above_threshold_indices[0]
+            below_threshold_indices = np.where(np_V < value)[0]
+            below_before_indices = below_threshold_indices[below_threshold_indices < first_above_index]
+            if len(below_before_indices) == 0:
+                logger.warning("No values below threshold %.3f before first above-threshold index in rise transient.", value)
+                return np.nan
+            last_below_index = below_before_indices[-1]
+            V1 = np_V[last_below_index]
+            V2 = np_V[first_above_index]
+            t1 = t[last_below_index]
+            t2 = t[first_above_index]
+            if V2 == V1:
+                return t1
+            lin_fit_res = lin_fit(value, [V1, V2], [t1, t2])
+        return float(lin_fit_res)
+def lin_fit(value,xs,ys):
+    """ Linear fit [x1 x2], [y1 y2] to find y at value x """
+    x1, x2 = xs
+    y1, y2 = ys
+    if x2 == x1:
+        return y1
+    return y1 + (value - x1) * (y2 - y1) / (x2 - x1)

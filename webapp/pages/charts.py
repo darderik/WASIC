@@ -55,10 +55,17 @@ with st.container():
         # Load the JSON file containing chart data
         with open(current_json_obj, "r") as cur_file:
             chart_data_dict = json.load(cur_file)
-            chart_data: ChartData = ChartData(**chart_data_dict)
+            if "charts" in chart_data_dict:
+                # Merged file: list of charts
+                chart_data_list = [ChartData.from_dict(d) for d in chart_data_dict["charts"]]
+            else:
+                # Individual file: single chart
+                chart_data_list = [ChartData.from_dict(chart_data_dict)]
 
-            fig = make_plotly_figure(chart_data)
-            st.empty().plotly_chart(
-                fig,
-                use_container_width=True,
-            )
+            for chart_data in chart_data_list:
+                st.write(f"**Chart: {chart_data.name}**")
+                fig = make_plotly_figure(chart_data)
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True,
+                )

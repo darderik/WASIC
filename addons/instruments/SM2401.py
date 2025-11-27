@@ -1,10 +1,11 @@
+import time
 from easy_scpi import Instrument
 from instruments import SCPI_Info, property_info
 from typing import List
 from config import Config
+from .SCPIInstrumentTemplate import SCPIInstrumentTemplate
 
-
-class SM2401(Instrument):
+class SM2401(SCPIInstrumentTemplate):
     """
     SM2401 Class
     ============
@@ -49,6 +50,7 @@ class SM2401(Instrument):
             Object containing port and baud rate information for the connection.
         """
         super().__init__(
+            scpi_info=scpi_info,
             port=scpi_info.port,
             baud_rate=scpi_info.baud_rate,
             read_termination="\n",
@@ -200,59 +202,53 @@ class SM2401(Instrument):
         resp = self.query("*OPC?")
         return resp
     def configure_current_measure(self, nplc: float, autorange:bool =True) -> None:
+        self.write(":SENS:FUNC 'CURR'")
         self.write(f":SENS:CURR:NPLC {nplc}")
         if autorange:
             self.write(":SENS:CURR:RANG:AUTO ON")
         else:
             self.write(":SENS:CURR:RANG:AUTO OFF")
         self.write(":FORMAT:ELEM CURR")
-        self.write(":CONF:CURR")
 
     def configure_voltage_measure(self, nplc: float, autorange:bool =True) -> None:
+        self.write(":SENS:FUNC 'VOLT'")
         self.write(f":SENS:VOLT:NPLC {nplc}")
         if autorange:
             self.write(":SENS:VOLT:RANG:AUTO ON")
         else:
             self.write(":SENS:VOLT:RANG:AUTO OFF")
         self.write(":FORMAT:ELEM VOLT")
-        self.write(":CONF:VOLT")
-
-    def measure_voltage(self) -> float:
-        """
-        Performs a voltage measurement.
-
-        Returns
-        -------
-        float
-            Measured voltage value.
-        """
-        self.write(":CONF:VOLT")
-        response = self.query(":READ?")
-        return float(response)
+    def configure_fres_measure(self,range:int = 0,nplc: float =1.0,offset_comp:bool = True) -> None:
+        self.write(":SENS:FUNC 'RES'")
+        if (range == 0):
+            self.write(":SENS:RES:RANG:AUTO ON")
+        else:
+            self.write(f":SENS:RES:RANG {range}")
+        self.write(f":SENS:RES:NPLC {nplc}")
+        if offset_comp:
+            self.write(":SENS:RES:OCOMpensated ON")
+        else:
+            self.write(":SENS:RES:OCOMpensated OFF")
+        self.write(":SENS:RES:MODE AUTO")
+        self.write(":SYST:RSEN ON")
 
     def read_meas(self) -> float:
         result: str = self.query(":READ?")
         return float(result)
 
-    def measure_current(self) -> float:
-        """
-        Performs a current measurement.
-
-        Returns
-        -------
-        float
-            Measured current value.
-        """
-        self.write(":CONF:CURR")
-        response = self.query(":READ?")
-        return float(response)
-
-    def output_on(self) -> None:
+    def output_on(self,wait_rise:bool = True) -> None:
         """
         Turns on the device output.
         """
         self.write(":OUTP ON")
         self.opc()
+        if wait_rise:
+            time.sleep(5e-3) # Rise time?
+    def read_fres(self) -> List[float]:
+        result=self.query(":READ?")
+        data = result.split(",")
+        voltage,current,resistance = data[0],data[1],data[2]
+        return [float(voltage), float(current), float(resistance)]
 
     def output_off(self) -> None:
         """

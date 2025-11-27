@@ -1,13 +1,10 @@
-from smtplib import bCRLF
-from easy_scpi import Instrument
-from instruments import SCPI_Info, property_info
 from typing import List
+from instruments import SCPI_Info, property_info
 from config import Config
-import threading
-import time
+from .SCPIInstrumentTemplate import SCPIInstrumentTemplate
 
 
-class RelayMatrix(Instrument):
+class RelayMatrix(SCPIInstrumentTemplate):
     """
     RelayMatrix Class
     =================
@@ -21,7 +18,7 @@ class RelayMatrix(Instrument):
         Resets one or more relays in the matrix.
     switch_commute_reset_all() -> None:
         Resets all relays in the matrix.
-    switch_commute_exclusive(relay: str) -> None:
+    switch_commute_exclusive(*relays: str) -> None:
         Activates one relay and resets all others in its group.
     get_system_log() -> str:
         Retrieves the current system log via UART.
@@ -45,23 +42,25 @@ class RelayMatrix(Instrument):
             Baud rate for the serial communication (default is 9600).
         """
         super().__init__(
-            port=scpi_info.port,
-            timeout=5000,
-            baud_rate=scpi_info.baud_rate,
-            handshake=True,
-            write_termination="\n",
-            read_termination="\n",
+            scpi_info,
+            timeout=kwargs.get("timeout", 5000),
+            handshake=kwargs.get("handshake", True),
+            write_termination=kwargs.get("write_termination", "\n"),
+            read_termination=kwargs.get("read_termination", "\n"),
             backend="@py",
-            encoding="ascii",
+            encoding=kwargs.get("encoding", "ascii"),
         )
-        self._child_lock = threading.RLock()
-        self.properties_list: List[property_info] = []  # No properties
-    def opc(self) -> None:
-        """
-        Waits for the operation to complete.
-        """
-        resp = self.query("*OPC?")
-        return resp
+
+        # Establish I/O (safe if already connected)
+        try:
+            self.connect()
+        except Exception:
+            pass
+
+        self.init_properties()
+
+    def init_properties(self) -> None:
+        self.properties_list: List[property_info] = []  # No properties for now
 
     def switch_commute(self, *relays: str) -> None:
         """
@@ -102,7 +101,7 @@ class RelayMatrix(Instrument):
 
         Parameters
         ----------
-        relay : str
+        relays : str
             The relay identifier in the format <group><number>, e.g., "b3", "c4".
         """
         command = f"switch:commute:exclusive {' '.join(relays)}"
@@ -137,6 +136,12 @@ class RelayMatrix(Instrument):
         Stops the system by turning off power.
         """
         self.write("sys:halt")
+
+    def identify(self) -> str:
+        """
+        Retrieves the device identification and firmware version.
+        """
+        return self.idn()
 
 
 # Mandatory append to register instrument class with its alias

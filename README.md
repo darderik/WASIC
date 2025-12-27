@@ -76,14 +76,20 @@ View [pyvisa-py doc](https://pyvisa.readthedocs.io/projects/pyvisa-py/en/latest/
    sudo apt install git python3 python3-pip -y
    ```
 
-3. Clone the WASIC repository:
+3. Install libusb (required for USB detection with pyusb):
+   
+   ```bash
+   sudo apt install libusb-1.0-0-dev -y
+   ```
+
+4. Clone the WASIC repository:
    
    ```bash
    git clone https://github.com/darderik/WASIC.git
    cd WASIC
    ```
 
-4. Install the required Python dependencies:
+5. Install the required Python dependencies:
    
    ```bash
    pip3 install -r requirements.txt

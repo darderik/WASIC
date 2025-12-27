@@ -1,0 +1,24 @@
+# Streamlit Configuration
+
+[server]
+# Completely disable file watcher to prevent inotify_buffer overflow
+fileWatcherType = "none"  # Disables watchdog/inotify completely
+runOnSave = false
+headless = true
+
+[runner]
+# Disable automatic reruns
+fastReruns = false
+magicEnabled = false
+
+[client]
+# Reduce logging verbosity
+toolbarMode = "minimal"
+
+[logger]
+# Set log level to error only
+level = "error"
+
+[global]
+# Disable development mode for production
+developmentMode = false

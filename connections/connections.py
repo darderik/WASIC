@@ -1,4 +1,7 @@
 from os import read
+import os
+import sys
+from pathlib import Path
 import threading
 import logging
 from threading import Thread, Lock
@@ -145,12 +148,23 @@ class Connections:
 
     def _get_locked_ports(self) -> List[str]:
         """Returns a list of ports currently locked by instruments."""
-        return [instr.scpi_instrument.port for instr in self.instruments_list]
+        return [instr.scpi_instrument.port for instr in self.instruments_list if instr.scpi_instrument.port is not None]
 
     def _get_available_ports(self, locked_ports: List[str]) -> List[str]:
         """Returns a list of available COM ports."""
         all_comports = comports()
-        return [port.name for port in all_comports if port.name not in locked_ports]
+        # On Linux lots of ttyS* pseudo-ports appear; prefer USB/ACM to avoid noise.
+        if sys.platform.startswith("linux"):
+            candidates = [
+                port.device
+                for port in all_comports
+                if port.device.startswith("/dev/ttyUSB")
+                or port.device.startswith("/dev/ttyACM")
+            ]
+        else:
+            candidates = [port.name for port in all_comports]
+
+        return [port for port in candidates if port not in locked_ports]
 
     def _fetch_com_instruments(
         self, available_ports: List[str]
@@ -179,13 +193,17 @@ class Connections:
     ) -> None:
         """Fetches instruments connected via USB using the VISA resource manager."""
         available_rms = ["@ivi", "@py"]
-        try:
-            for backend in available_rms:
-                resource_manager = (
-                    visa.ResourceManager(visa_dll_path)
-                    if visa_dll_path and backend == "@ivi"
-                    else visa.ResourceManager(backend)
-                )
+        for backend in available_rms:
+            resource_manager = None
+            try:
+                if backend == "@ivi":
+                    if not visa_dll_path or not os.path.exists(visa_dll_path):
+                        logger.debug("Skipping @ivi backend: missing or invalid visa_dll_path")
+                        continue
+                    resource_manager = visa.ResourceManager(visa_dll_path)
+                else:
+                    resource_manager = visa.ResourceManager(backend)
+
                 all_usb_instruments = resource_manager.list_resources()
                 logger.debug(f"USB instruments found with backend {backend}: {all_usb_instruments}")
                 for usb_instr in (
@@ -195,10 +213,14 @@ class Connections:
                     and "ASRL" not in x
                 ):
                     self._process_usb_instrument(usb_instr, backend)
-                del resource_manager
-
-        except Exception as e:
-            logger.error(f"Failed to initialize using USB resource manager: {e}")
+            except Exception as e:
+                logger.error(f"Failed to initialize USB resource manager for backend {backend}: {e}")
+            finally:
+                try:
+                    if resource_manager is not None:
+                        resource_manager.close()
+                except Exception:
+                    pass
 
     def _process_usb_instrument(self, usb_instr: str, backend: str) -> None:
         """Processes a single USB instrument."""
@@ -268,10 +290,12 @@ class Connections:
             instr_info_json: List[dict[str, Any]] = [
                 asdict(item) for item in instr_info_list
             ]
-            file_path: str = self._config.get("instrument_connections_datapath", "")
+            raw_path: str = self._config.get("instrument_connections_datapath", "")
+            file_path = Path(str(raw_path).replace("\\", os.sep))
             try:
-                if not file_path:
+                if not raw_path:
                     raise ValueError("Configuration file path is not set.")
+                file_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(file_path, "w") as data_file:
                     json.dump(instr_info_json, data_file, indent=4)
             except FileNotFoundError:
@@ -299,7 +323,8 @@ class Connections:
         """
         with self._file_lock:
             try:
-                file_path: str = self._config.get("instrument_connections_datapath", "")
+                raw_path: str = self._config.get("instrument_connections_datapath", "")
+                file_path = Path(str(raw_path).replace("\\", os.sep))
                 with open(file_path, "r") as data_file:
                     instr_info_json: List[Dict[str, Any]] = json.load(data_file)
                     instr_info_list: List[SCPI_Info] = [

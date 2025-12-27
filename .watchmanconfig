@@ -1,0 +1,8 @@
+{
+    "ignore_dirs": [
+        "__pycache__",
+        ".git",
+        "data",
+        ".streamlit"
+    ]
+}

@@ -56,12 +56,19 @@ def meas_r_cube_source_k2000(task_obj: Task) -> None:
     settle_s = float(task_obj.parameters.get("settle_time_s", "0.5"))
     vertices = int(task_obj.parameters.get("vertices", "8"))
     nplc = float(task_obj.parameters.get("nplc", "1.0"))
+    overall_iterations = int(task_obj.parameters.get("overall_iterations", "1"))
     # Unused placeholder retained for compatibility
     merge_chart_files = str_to_bool(task_obj.parameters.get("merge_chart_files", "True"))
+    
+    # Mapping parameters (split for Streamlit compatibility)
+    mapping_iplus = task_obj.parameters.get("mapping_I+", "C")
+    mapping_iminus = task_obj.parameters.get("mapping_I-", "D")
+    mapping_vplus = task_obj.parameters.get("mapping_V+", "A")
+    mapping_vminus = task_obj.parameters.get("mapping_V-", "B")
 
     data.extend([resistance_chart])
 
-    mapping = {"I+": "C", "I-": "D", "V+": "A", "V-": "B"}
+    mapping = {"I+": mapping_iplus, "I-": mapping_iminus, "V+": mapping_vplus, "V-": mapping_vminus}
 
     resistance_chart.x_series.raw = []
     resistance_chart.y_series.raw = []
@@ -91,45 +98,46 @@ def meas_r_cube_source_k2000(task_obj: Task) -> None:
 
     try:
         smu.output_on()
-        for i_pos in range(1, vertices + 1):
-            for i_neg in range(i_pos, vertices + 1):
-                for v_pos in range(1, vertices + 1):
-                    for v_neg in range(v_pos, vertices + 1):
-                        if len({i_pos, i_neg, v_pos, v_neg}) < 4:
-                            continue
-                        if exit_flag.is_set():
-                            logger.info("Exit flag set; terminating task.")
-                            return
-                        rm1.switch_commute_reset_all(); rm2.switch_commute_reset_all()
-                        rm1.opc(); rm2.opc()
-                        route("I+", i_pos); route("I-", i_neg); route("V+", v_pos); route("V-", v_neg)
-                        rm1.opc(); rm2.opc(); time.sleep(settle_s)
-                        v_plus = measure_voltage()
-                        if delta_mode:
-                            # Reverse current polarity
-                            try:
-                                smu.current = -current
-                            except Exception:
-                                logger.warning("SM2401 current reversal failed; delta disabled for this point.")
+        for iteration in range(overall_iterations):
+            for i_pos in range(1, vertices + 1):
+                for i_neg in range(i_pos, vertices + 1):
+                    for v_pos in range(1, vertices + 1):
+                        for v_neg in range(v_pos, vertices + 1):
+                            if len({i_pos, i_neg, v_pos, v_neg}) < 4:
+                                continue
+                            if exit_flag.is_set():
+                                logger.info("Exit flag set; terminating task.")
+                                return
+                            rm1.switch_commute_reset_all(); rm2.switch_commute_reset_all()
+                            rm1.opc(); rm2.opc()
+                            route("I+", i_pos); route("I-", i_neg); route("V+", v_pos); route("V-", v_neg)
+                            rm1.opc(); rm2.opc(); time.sleep(settle_s)
+                            v_plus = measure_voltage()
+                            if delta_mode:
+                                # Reverse current polarity
+                                try:
+                                    smu.current = -current
+                                except Exception:
+                                    logger.warning("SM2401 current reversal failed; delta disabled for this point.")
+                                    v_minus = float('nan')
+                                    v_eff = v_plus
+                                else:
+                                    time.sleep(settle_s)
+                                    v_minus = measure_voltage()
+                                    # Restore current
+                                    try:
+                                        smu.current = current
+                                    except Exception:
+                                        pass
+                                    v_eff = (v_plus - v_minus) / 2.0
+                            else:
                                 v_minus = float('nan')
                                 v_eff = v_plus
-                            else:
-                                time.sleep(settle_s)
-                                v_minus = measure_voltage()
-                                # Restore current
-                                try:
-                                    smu.current = current
-                                except Exception:
-                                    pass
-                                v_eff = (v_plus - v_minus) / 2.0
-                        else:
-                            v_minus = float('nan')
-                            v_eff = v_plus
-                        R = v_eff / (abs(current) if abs(current) > 0 else 1.0)
-                        label = [f"{meas_idx}", f"I+:{i_pos} I-:{i_neg} V+:{v_pos} V-:{v_neg}", f"rm:{mapping['I+']}{i_pos} {mapping['I-']}{i_neg} {mapping['V+']}{v_pos} {mapping['V-']}{v_neg}"]
-                        resistance_chart.x_series.raw.append(label)
-                        resistance_chart.y_series.raw.append([v_plus, v_minus,R,current, meas_idx])
-                        meas_idx += 1
+                            R = v_eff / (abs(current) if abs(current) > 0 else 1.0)
+                            label = [f"{meas_idx}", f"I+:{i_pos} I-:{i_neg} V+:{v_pos} V-:{v_neg}", f"rm:{mapping['I+']}{i_pos} {mapping['I-']}{i_neg} {mapping['V+']}{v_pos} {mapping['V-']}{v_neg}"]
+                            resistance_chart.x_series.raw.append(label)
+                            resistance_chart.y_series.raw.append([v_plus, v_minus,R,current, meas_idx])
+                            meas_idx += 1
     except Exception as e:
         logger.error(f"Error in SM2401+K2000 R cube task: {e}")
     finally:
@@ -156,7 +164,12 @@ def init_meas_r_cube_source_k2000_sm2401() -> None:
             "settle_time_s": "0.3",
             "vertices": "8",
             "nplc": "1.0",
+            "overall_iterations": "1",
             "merge_chart_files": "True",
+            "mapping_I+": "C",
+            "mapping_I-": "D",
+            "mapping_V+": "A",
+            "mapping_V-": "B",
         },
     )
     Tasks().add_task(t)

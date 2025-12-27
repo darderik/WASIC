@@ -9,7 +9,7 @@ import datetime
 import os
 from config import Config
 logger = logging.getLogger(__name__)
-sleep_time:float = Config().get("processor_sleep", 1.0)
+sleep_time:float = Config().get("processor_sleep", 2.0)
 
 class DataProcessor:
     def __init__(self,cur_task:Task) -> None:

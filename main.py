@@ -26,7 +26,7 @@ def init_wasic():
     stream_handler.setFormatter(formatter)
     root_logger = logging.getLogger()
     # Defensive: ensure log level is always valid
-    log_level = Config().get("log_level", "INFO") or "INFO"
+    log_level = Config().get("log_level", "WARNING") or "WARNING"
     root_logger.setLevel(log_level)
     # Remove all handlers associated with the root logger object.
     for h in root_logger.handlers[:]:

@@ -218,7 +218,7 @@ class SM2401(SCPIInstrumentTemplate):
         else:
             self.write(":SENS:VOLT:RANG:AUTO OFF")
         self.write(":FORMAT:ELEM VOLT")
-    def configure_fres_measure(self,range:int = 0,nplc: float =1.0,offset_comp:bool = True) -> None:
+    def configure_fres_measure(self,range:float = 0,nplc: float =1.0,offset_comp:bool = True) -> None:
         self.write(":SENS:FUNC 'RES'")
         if (range == 0):
             self.write(":SENS:RES:RANG:AUTO ON")

@@ -1,17 +1,17 @@
 import os
+import logging
 from charset_normalizer import detect
 from streamlit import connection
 import streamlit.web.bootstrap
-import logging
 from config import Config
 from connections.utilities import detect_baud_rate
 from tasks import Tasks
 from connections import Connections
 from wasic_test import use_as_library
-# Import for forcing initialization of tasks
-from addons.tasks import *
 import threading
-from wasic_test import use_as_library
+
+# Initialize addon tasks (registers instrument extensions and task types)
+import addons.tasks  # noqa: F401
 def init_wasic():
     # Create the directory if it doesn't exist
     os.makedirs("data", exist_ok=True)

@@ -1,16 +1,10 @@
 {
     "instr_aliases": [
-        "Raspberry",
-        "Model 2000",
-        "Relay Matrix",
-        "34420A",
-        "TDS 2012",
-        "TBS1052C",
-        "2401"
+        "Model 2000"
     ],
     "communication_mode": "pyvisa",
-    "instrument_connections_datapath": "data\\instr\\instruments.json",
-    "data_charts_path": "data\\charts",
+    "instrument_connections_datapath": "data/instr/instruments.json",
+    "data_charts_path": "data/charts",
     "backup_switch": true,
     "data_charts_relative_bkps": "backups",
     "backup_schedule": 120,
@@ -22,6 +16,5 @@
         "TBS1052C"
     ],
     "log_level": "DEBUG",
-    "custom_backend": "",
     "processor_sleep": 1.0
 }

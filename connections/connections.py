@@ -112,7 +112,6 @@ class Connections:
         self,
         curAliasesList: Optional[List[str]] = None,
         clear_list: bool = True,
-        visa_dll_path: str = Config().get("custom_backend", ""),
     ) -> None:
         """
         Fetches all instruments based on the provided list of aliases, including USB instruments.
@@ -120,7 +119,6 @@ class Connections:
         Args:
             curAliasesList (List[str]): A list of instrument aliases to fetch.
             clear_list (bool): Whether to clear the current instruments list before fetching.
-            visa_dll_path (str): Path to the VISA DLL for the resource manager.
         """
         curAliasesList = curAliasesList or self._config.get("instr_aliases")
         with self._instrument_lock:
@@ -130,7 +128,7 @@ class Connections:
             logger.debug(f"Fetching instruments based on aliases: {curAliasesList}")
             curLockedPorts = self._get_locked_ports()
             available_ports = self._get_available_ports(curLockedPorts)
-            self._fetch_usb_instruments(curLockedPorts, visa_dll_path)
+            self._fetch_usb_instruments(curLockedPorts)
 
             com_idn_baud = self._fetch_com_instruments(available_ports)
             self._process_com_instruments(com_idn_baud)
@@ -189,38 +187,31 @@ class Connections:
         return com_idn_baud
 
     def _fetch_usb_instruments(
-        self, locked_ports: List[str], visa_dll_path: str
+        self, locked_ports: List[str]
     ) -> None:
-        """Fetches instruments connected via USB using the VISA resource manager."""
-        available_rms = ["@ivi", "@py"]
-        for backend in available_rms:
-            resource_manager = None
-            try:
-                if backend == "@ivi":
-                    if not visa_dll_path or not os.path.exists(visa_dll_path):
-                        logger.debug("Skipping @ivi backend: missing or invalid visa_dll_path")
-                        continue
-                    resource_manager = visa.ResourceManager(visa_dll_path)
-                else:
-                    resource_manager = visa.ResourceManager(backend)
+        """Fetches instruments connected via USB using the PyVISA resource manager (@py backend)."""
+        resource_manager = None
+        try:
+            # Use only @py backend (pyvisa-py) for cross-platform compatibility
+            resource_manager = visa.ResourceManager("@py")
 
-                all_usb_instruments = resource_manager.list_resources()
-                logger.debug(f"USB instruments found with backend {backend}: {all_usb_instruments}")
-                for usb_instr in (
-                    x
-                    for x in all_usb_instruments
-                    if x not in locked_ports
-                    and "ASRL" not in x
-                ):
-                    self._process_usb_instrument(usb_instr, backend)
-            except Exception as e:
-                logger.error(f"Failed to initialize USB resource manager for backend {backend}: {e}")
-            finally:
-                try:
-                    if resource_manager is not None:
-                        resource_manager.close()
-                except Exception:
-                    pass
+            all_usb_instruments = resource_manager.list_resources()
+            logger.debug(f"USB instruments found via pyvisa: {all_usb_instruments}")
+            for usb_instr in (
+                x
+                for x in all_usb_instruments
+                if x not in locked_ports
+                and "ASRL" not in x
+            ):
+                self._process_usb_instrument(usb_instr, "@py")
+        except Exception as e:
+            logger.error(f"Failed to initialize USB resource manager via pyvisa: {e}")
+        finally:
+            try:
+                if resource_manager is not None:
+                    resource_manager.close()
+            except Exception:
+                pass
 
     def _process_usb_instrument(self, usb_instr: str, backend: str) -> None:
         """Processes a single USB instrument."""
@@ -330,10 +321,9 @@ class Connections:
                     instr_info_list: List[SCPI_Info] = [
                         SCPI_Info(**item) for item in instr_info_json
                     ]
-                # Understand if ni-visa backend is needed (usb instruments)
                 usb_instr = [item for item in instr_info_list if "USB" in item.port]
-                if usb_instr != []:
-                    self.backend = Config().get("custom_backend", "")
+#                if usb_instr != []:
+#                    self.backend = Config().get("custom_backend", "")
 
                 for instr_info in instr_info_list:
                     if not self.is_scpi_info_busy(instr_info):

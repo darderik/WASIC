@@ -9,8 +9,8 @@ T = TypeVar("T")
 default_config = {
     "instr_aliases": ["Raspberry", "Model 2000", "Relay Matrix"],
     "communication_mode": "pyvisa",
-    "instrument_connections_datapath": "data\\instr\\instruments.json",
-    "data_charts_path": "data\\charts",
+    "instrument_connections_datapath": "data/instr/instruments.json",
+    "data_charts_path": "data/charts",
     "data_charts_relative_bkps": "backups",
     "backup_switch": True,
     "backup_schedule": 120,
@@ -59,7 +59,25 @@ class Config:
                 f"Error decoding configuration file at {config_path}. Using default configuration."
             )
             self._data = default_config
+            
+        # If only a single item [*] then grab all instruments from Config._data["instruments_extensions"]
+        if self._data.get("instr_aliases") == ["*"]:
+            self._data["instr_aliases"] = [
+                ext[0] for ext in self._data.get("instruments_extensions", [])
+            ]
+    def is_in_instr_aliases(self, idn_string: str) -> Optional[str]:
+        """
+        Checks if any of the instrument aliases are present in the given IDN string.
 
+        Args:
+            idn_string (str): The IDN string to check against the instrument aliases.
+        Returns:
+            Optional[str]: The matching alias if found, otherwise None.
+        """
+        for alias in self.get("instr_aliases", []):
+            if alias in idn_string:
+                return alias
+        return None
     def add_instrument_extension(self, instr_extension: tuple[str, type]):
         """
         Adds an instrument extension to the configuration.

@@ -1,4 +1,5 @@
 import streamlit as st
+import logging
 from connections import Connections
 import pandas as pd
 from config import Config
@@ -6,6 +7,7 @@ from easy_scpi import Instrument
 from typing import List
 from instruments import Instrument_Entry
 
+logger = logging.getLogger(__name__)
 conn_obj = Connections()
 conf_obj = Config()
 
@@ -28,7 +30,8 @@ def verify_instruments(mode: int = 0, clear_list: bool = True):
             conn_obj.fetch_all_instruments(curAliasesList=aliases)
         else:
             conn_obj.fetch_all_instruments(curAliasesList=aliases, clear_list=False)
-    except:
+    except Exception as e:
+        logger.warning(f"Error while fetching instruments: {e}")
         st.error("Error while fetching instruments")
     # Update session state with the instruments data
     instr_list: List[Instrument_Entry] = conn_obj.instruments_list

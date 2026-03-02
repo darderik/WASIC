@@ -1,14 +1,14 @@
 from .config import Config
 import os 
+from pathlib import Path
 
 # Create data and data backups
-data_charts_path = Config().get("data_charts_path")
+data_charts_path = Path(Config().get("data_charts_path"))
 bkp_rel_path = Config().get("data_charts_relative_bkps")
 
 # Create data charts path folder
-if not os.path.exists(data_charts_path):
-    os.makedirs(data_charts_path)
+data_charts_path.mkdir(parents=True, exist_ok=True)
 
 # Create data backups folder
-if not os.path.exists(f"{data_charts_path}\\"+bkp_rel_path):
-    os.makedirs(f"{data_charts_path}\\"+bkp_rel_path)
+backup_path = data_charts_path / bkp_rel_path
+backup_path.mkdir(parents=True, exist_ok=True)

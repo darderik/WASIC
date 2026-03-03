@@ -4,7 +4,6 @@ from charset_normalizer import detect
 from streamlit import connection
 import streamlit.web.bootstrap
 from config import Config
-from connections.utilities import detect_baud_rate
 from tasks import Tasks
 from connections import Connections
 from wasic_test import use_as_library
@@ -34,6 +33,7 @@ def init_wasic():
     root_logger.addHandler(file_handler)
     root_logger.addHandler(stream_handler)
 
+
     logging.info("Starting WASIC...")
 
     script_path = os.path.abspath("streamlit_app.py")
@@ -49,7 +49,7 @@ def main():
 
 
     # End override code -----------
-
+    Connections().fetch_all_instruments()
 
     streamlit.web.bootstrap.run(script_path, False, [], {})
 

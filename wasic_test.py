@@ -8,7 +8,6 @@ import os
 import serial
 from instruments import SCPI_Info
 from typing import cast
-from connections.utilities import detect_baud_rate
 import gc
 import time
 import random

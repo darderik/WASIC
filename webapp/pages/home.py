@@ -3,7 +3,6 @@ import logging
 from connections import Connections
 import pandas as pd
 from config import Config
-from easy_scpi import Instrument
 from typing import List
 from instruments import Instrument_Entry
 
@@ -14,10 +13,10 @@ conf_obj = Config()
 
 def baud_or_usb(instr: Instrument_Entry) -> str:
     """Return the baud rate or USBMTC resource string."""
-    if instr.data.baud_rate != 0:
-        return f"{instr.data.baud_rate}"
+    if instr.data.resource_str.startswith("USB"):
+        return "USB"
     else:
-        return f"USBMTC Resource: {instr.data.port}"
+        return str(instr.data.baud_rate)
 
 
 def verify_instruments(mode: int = 0, clear_list: bool = True):
@@ -38,7 +37,7 @@ def verify_instruments(mode: int = 0, clear_list: bool = True):
     st.session_state["instr_table"] = pd.DataFrame(
         {
             "Instrument Name": [instr.data.name for instr in instr_list],
-            "COM PORT": [instr.scpi_instrument.port for instr in instr_list],
+            "COM PORT": [instr.data.port for instr in instr_list],
             "BAUD RATE": [baud_or_usb(instr) for instr in instr_list],
             "IDN": [instr.data.idn for instr in instr_list],
         }

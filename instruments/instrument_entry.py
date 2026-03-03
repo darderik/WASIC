@@ -1,11 +1,11 @@
 from dataclasses import dataclass
-from easy_scpi.scpi_instrument import SCPI_Instrument
 from serial import Serial
 from config import Config
 import time
 from typing import Optional
 import pyvisa as visa
 import logging
+from pymeasure.instruments import Instrument
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +31,14 @@ class SCPI_Info:
     idn: str = "default-idn"
     alias: str = "instrument"
     name: str = "instrument"
+    resource_str: str = ""
     backend: str = "@py"
 
 
 @dataclass
 class Instrument_Entry:
     data: SCPI_Info
-    scpi_instrument: SCPI_Instrument
+    scpi_instrument: Instrument
     _config: Config = Config()
 
     def write_wrapper(self, command: str) -> None:

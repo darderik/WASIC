@@ -1,20 +1,13 @@
 {
     "instr_aliases": [
-        "Model 2000"
+        "RPB"
     ],
-    "communication_mode": "pyvisa",
     "instrument_connections_datapath": "data/instr/instruments.json",
     "data_charts_path": "data/charts",
     "backup_switch": true,
     "data_charts_relative_bkps": "backups",
     "backup_schedule": 120,
     "default_timeout": 0.5,
-    "init_properties_types": [
-        "NV34420",
-        "K2000",
-        "RaspberrySIM",
-        "TBS1052C"
-    ],
     "log_level": "DEBUG",
     "processor_sleep": 1.0
 }

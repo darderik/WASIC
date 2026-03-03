@@ -1,10 +1,10 @@
 from typing import List
 from instruments import SCPI_Info, property_info
-from config import Config
-from .SCPIInstrumentTemplate import SCPIInstrumentTemplate
+import pymeasure.adapters as pma
+from pymeasure.instruments import Instrument,SCPIMixin
 
 
-class RelayMatrix(SCPIInstrumentTemplate):
+class RelayMatrix(SCPIMixin, Instrument):
     """
     RelayMatrix Class
     =================
@@ -30,7 +30,7 @@ class RelayMatrix(SCPIInstrumentTemplate):
         Retrieves the device identification and firmware version.
     """
 
-    def __init__(self, scpi_info: SCPI_Info, **kwargs) -> None:
+    def __init__(self, adapter,name,**kwargs) -> None:
         """
         Initializes the RelayMatrix object with the specified SCPI parameters.
 
@@ -41,23 +41,22 @@ class RelayMatrix(SCPIInstrumentTemplate):
         baud_rate : int, optional
             Baud rate for the serial communication (default is 9600).
         """
+
         super().__init__(
-            scpi_info,
-            timeout=kwargs.get("timeout", 5000),
-            handshake=kwargs.get("handshake", True),
-            write_termination=kwargs.get("write_termination", "\n"),
-            read_termination=kwargs.get("read_termination", "\n"),
-            backend="@py",
-            encoding=kwargs.get("encoding", "ascii"),
+            adapter,
+            name=name,
         )
 
-        # Establish I/O (safe if already connected)
-        try:
-            self.connect()
-        except Exception:
-            pass
-
         self.init_properties()
+
+    def query(self, command: str) -> str:
+        return str(self.ask(command))
+
+    def opc(self) -> bool:
+        return str(self.ask("*OPC?")).strip() == "1"
+
+    def idn(self) -> str:
+        return str(self.ask("*IDN?"))
 
     def init_properties(self) -> None:
         self.properties_list: List[property_info] = []  # No properties for now
@@ -143,6 +142,3 @@ class RelayMatrix(SCPIInstrumentTemplate):
         """
         return self.idn()
 
-
-# Mandatory append to register instrument class with its alias
-Config().add_instrument_extension(("Relay Matrix", RelayMatrix))

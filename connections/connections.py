@@ -1,23 +1,22 @@
-from os import read
 import os
 import sys
 from pathlib import Path
 import threading
 import logging
 from threading import Thread, Lock
-import time
 import json
-from typing import List, Optional, Any, Tuple, Dict
+from typing import List, Optional, Any, Tuple, Dict, cast
 from dataclasses import asdict
 from serial.tools.list_ports import comports
 from instruments import Instrument_Entry, SCPI_Info
-from easy_scpi import Instrument
 from config import Config
-from .utilities import detect_baud_wrapper, is_instrument_in_aliases
-import pyvisa as visa
+from .baud_detector import BaudTrialDetector
+import pymeasure.instruments as pmi
+import pymeasure.adapters as pma
+from pymeasure.instruments.instrument import Instrument
 
 logger = logging.getLogger(__name__)
-
+MULTITHREAD_FLAG = True  # Set to False to disable multithreading for COM port detection
 
 class Connections:
     """
@@ -37,9 +36,11 @@ class Connections:
     backend: str = ""
 
     def __new__(cls, *args, **kwargs):
+        # Singleton pattern: keep one shared connection manager across the app.
         if cls._instance is None:
             cls._instance = super(Connections, cls).__new__(cls, *args, **kwargs)
             cls._config = Config()
+            # Default to pyvisa-py backend for USB/VISA resources.
             cls._instance.backend = "@py"
         return cls._instance
 
@@ -86,10 +87,18 @@ class Connections:
             bool: True if the SCPI_Info's port is busy, False otherwise.
         """
         with self._instrument_lock:
-            return any(
-                instr.scpi_instrument.port == instr_info.port
-                for instr in self.instruments_list
-            )
+            for instr in self.instruments_list:
+                resource = instr.scpi_instrument
+                if isinstance(resource, pma.SerialAdapter):
+                    if str(resource.connection.port) == instr_info.port:
+                        return True
+                elif isinstance(resource, pma.VISAAdapter):
+                    if str(resource.resource_name) == instr_info.port:
+                        return True
+                else:
+                    if str(resource) == instr_info.port:
+                        return True
+            return False
 
     def verify_instruments(self) -> None:
         """
@@ -99,13 +108,18 @@ class Connections:
             valid_instruments = []
             for instr in self.instruments_list:
                 try:
-                    _ = instr.scpi_instrument.id  # Attempt to retrieve ID
+                    _ = instr.scpi_instrument.ask("*IDN?")
                     valid_instruments.append(instr)  # Instrument is valid
                 except RuntimeError as rt:
                     logger.warning(
                         f"Failed to verify instrument: {instr.data.idn} -> {rt}"
                     )
-                    instr.scpi_instrument.disconnect()  # Free up COM port lock
+                    self._disconnect_instrument(instr.scpi_instrument)
+                except Exception as ex:
+                    logger.warning(
+                        f"Failed to verify instrument: {instr.data.idn} -> {ex}"
+                    )
+                    self._disconnect_instrument(instr.scpi_instrument)
             self.instruments_list = valid_instruments  # Update the InstrumentsList
 
     def fetch_all_instruments(
@@ -126,27 +140,47 @@ class Connections:
                 self._clear_instruments()
 
             logger.debug(f"Fetching instruments based on aliases: {curAliasesList}")
+            # Keep track of resources already open by existing entries.
             curLockedPorts = self._get_locked_ports()
+            # Scan COM ports first, excluding currently locked resources.
             available_ports = self._get_available_ports(curLockedPorts)
+            # Scan VISA resources (USB/GPIB/TCPIP), also skipping locked entries.
             self._fetch_usb_instruments(curLockedPorts)
 
+            # Probe serial ports by trying candidate baud rates and querying *IDN?.
             com_idn_baud = self._fetch_com_instruments(available_ports)
+            # Build SCPI_Info objects and register matching aliases only.
             self._process_com_instruments(com_idn_baud)
 
     def _clear_instruments(self) -> None:
         """Disconnects and clears the current instruments list."""
-        for instr in self.instruments_list:
+        for instr in list(self.instruments_list):
             try:
-                instr.scpi_instrument.disconnect()
-                self.instruments_list.remove(instr)
+                self._disconnect_instrument(instr.scpi_instrument)
+                logger.debug(f"Disconnected instrument: {instr.data.idn}")
             except Exception as e:
                 logger.error(
                     f"Failed to disconnect instrument: {instr.data.idn} -> {e}"
                 )
+        self.instruments_list = []
+
+    @staticmethod
+    def _disconnect_instrument(instr: Instrument) -> None:
+        try:
+            instr.adapter.connection.close()
+        except Exception:
+            instr.close()
 
     def _get_locked_ports(self) -> List[str]:
         """Returns a list of ports currently locked by instruments."""
-        return [instr.scpi_instrument.port for instr in self.instruments_list if instr.scpi_instrument.port is not None]
+        locked_ports: List[str] = []
+        for instr in self.instruments_list:
+            resource = instr.scpi_instrument
+            if isinstance(resource, pma.SerialAdapter):
+                locked_ports.append(str(resource.connection.port))
+            elif isinstance(resource, pma.VISAAdapter):
+                locked_ports.append(str(resource.resource_name))
+        return locked_ports
 
     def _get_available_ports(self, locked_ports: List[str]) -> List[str]:
         """Returns a list of available COM ports."""
@@ -172,61 +206,81 @@ class Connections:
         com_idn_baud_lock = Lock()
         threads = []
 
-        for port in available_ports:
-            thread = Thread(
-                target=detect_baud_wrapper,
-                args=(port, com_idn_baud, com_idn_baud_lock),
-            )
-            thread.start()
-            threads.append(thread)
+        if MULTITHREAD_FLAG:
+            # Probe each port in parallel; each worker appends successful detections.
+            for port in available_ports:
+                thread = Thread(
+                    target=self._detect_baud_for_port,
+                    args=(port, com_idn_baud, com_idn_baud_lock),
+                )
+                thread.start()
+                threads.append(thread)
 
-        for thread in threads:
-            thread.join()
+            for thread in threads:
+                thread.join()
+        else:
+            # Single-thread fallback useful for debugging race/resource issues.
+            for port in available_ports:
+                    result = BaudTrialDetector(port=port).detect()
+                    if result is not None:
+                        detected: Tuple[str, str, int] = (port, result.idn, result.baud_rate)
+                        logger.debug(
+                            f"BR Detection on port {detected[0]} with Baud {detected[2]} and IDN {detected[1]}"
+                    )
+                    com_idn_baud.append(detected)
 
         logger.debug(f"COM ports, IDN strings, and baud rates: {com_idn_baud}")
         return com_idn_baud
+
+    def _detect_baud_for_port(
+        self,
+        port: str,
+        target: List[Tuple[str, str, int]],
+        target_lock: Lock,
+    ) -> None:
+        # Try known baud rates and collect only successful *IDN? detections.
+        result = BaudTrialDetector(port=port).detect()
+        if result is None:
+            logger.debug(f"Failed to detect baud rate for port {port}")
+            return
+
+        detected: Tuple[str, str, int] = (port, result.idn, result.baud_rate)
+        logger.debug(
+            f"BR Detection on port {detected[0]} with Baud {detected[2]} and IDN {detected[1]}"
+        )
+        with target_lock:
+            target.append(detected)
 
     def _fetch_usb_instruments(
         self, locked_ports: List[str]
     ) -> None:
         """Fetches instruments connected via USB using the PyVISA resource manager (@py backend)."""
-        resource_manager = None
         try:
-            # Use only @py backend (pyvisa-py) for cross-platform compatibility
-            resource_manager = visa.ResourceManager("@py")
-
-            all_usb_instruments = resource_manager.list_resources()
-            logger.debug(f"USB instruments found via pyvisa: {all_usb_instruments}")
+            all_usb_instruments = pmi.list_resources()
+            logger.debug(f"USB instruments found via pymeasure: {all_usb_instruments}")
             for usb_instr in (
                 x
                 for x in all_usb_instruments
                 if x not in locked_ports
+                # Serial VISA resources are handled in COM probing path.
                 and "ASRL" not in x
             ):
                 self._process_usb_instrument(usb_instr, "@py")
         except Exception as e:
             logger.error(f"Failed to initialize USB resource manager via pyvisa: {e}")
-        finally:
-            try:
-                if resource_manager is not None:
-                    resource_manager.close()
-            except Exception:
-                pass
 
     def _process_usb_instrument(self, usb_instr: str, backend: str) -> None:
         """Processes a single USB instrument."""
         id_str = ""
+        cur_instr: Optional[Instrument] = None
         try:
             cur_instr = Instrument(
-                    port=usb_instr,
-                    backend=backend,
-                    write_terminator="\n",
-                    read_terminator="\n",
-                )
-            cur_instr.connect()
-            id_str= cur_instr.id
-            alias = is_instrument_in_aliases(idn=id_str)
-            del cur_instr
+                adapter=usb_instr,
+                backend=backend,
+                name=usb_instr,
+            )
+            id_str = cur_instr.ask("*IDN?")
+            alias = Config().is_in_instr_aliases(id_str)
             if alias:
                 splitted_idn = id_str.split(",")
                 scpi_info = SCPI_Info(
@@ -234,19 +288,28 @@ class Connections:
                     baud_rate=0,
                     idn=id_str,
                     alias=alias,
+                    resource_str=usb_instr,
                     name=f"{splitted_idn[0]} {splitted_idn[1]}",
                     backend=backend                
                     )
                 self._add_instrument(scpi_info)
         except Exception as e:
             logger.error(f"Failed to create instrument for USB: {usb_instr} -> {e}")
+        finally:
+            try:
+                if cur_instr is not None:
+                    cur_instr.close()
+            except Exception:
+                pass
 
     def _process_com_instruments(
         self, com_idn_baud: List[Tuple[str, str, int]]
     ) -> None:
         """Processes instruments connected via COM ports."""
         for port, idn_string, baud in com_idn_baud:
-            alias = is_instrument_in_aliases(idn=idn_string)
+            # Convert COMx -> ASRLx::INSTR for VISAAdapter.
+            resource_str = f"ASRL{''.join(filter(str.isdigit, port))}::INSTR"
+            alias = Config().is_in_instr_aliases(idn_string)
             if alias:
                 splitted_idn = idn_string.split(",")
                 scpi_info = SCPI_Info(
@@ -254,6 +317,7 @@ class Connections:
                     baud_rate=baud,
                     idn=idn_string,
                     alias=alias,
+                    resource_str=resource_str,
                     name=f"{splitted_idn[0]} {splitted_idn[1]}",
                 )
                 logger.debug(f"Found instrument: {alias} -> {scpi_info}")
@@ -321,9 +385,6 @@ class Connections:
                     instr_info_list: List[SCPI_Info] = [
                         SCPI_Info(**item) for item in instr_info_json
                     ]
-                usb_instr = [item for item in instr_info_list if "USB" in item.port]
-#                if usb_instr != []:
-#                    self.backend = Config().get("custom_backend", "")
 
                 for instr_info in instr_info_list:
                     if not self.is_scpi_info_busy(instr_info):
@@ -348,36 +409,43 @@ class Connections:
                 logger.error(f"Error loading configuration: {e}")
                 self.fetch_all_instruments(self._config.get("instr_aliases", []))
 
-    def _custom_instr_handler(self,scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
-        # Fetch global backend from connections resource    
-        config= self._config
+    def _custom_instr_handler(self, scpi_info: SCPI_Info) -> Optional[Instrument_Entry]:
+        config = self._config
         cur_backend: str = self.backend
-        instr_extensions: List[tuple[str, type]] = config.get("instruments_extensions", [])
+        instr_extensions = cast(
+            List[Tuple[str, type[Instrument]]],
+            config.get("instruments_extensions", []),
+        )
         newSCPI: Optional[Instrument] = None
         curInstrumentWrapper: Optional[Instrument_Entry] = None
-        # Fetch from config singleton
+        # Try extension registry first: map IDN substring -> custom instrument class.
         for instr_ext in instr_extensions:
             if instr_ext[0].lower() in scpi_info.idn.lower():
-                type_name = instr_ext[0]
                 type_obj = instr_ext[1]
                 logger.debug(f"Found extension for {scpi_info.idn}")
-                if "USB" in scpi_info.port:
-                    bend = scpi_info.backend if scpi_info.backend != "" else cur_backend
-                    newSCPI = type_obj(scpi_info=scpi_info, backend=bend)
-                else:
-                    newSCPI = type_obj(scpi_info=scpi_info, backend=cur_backend)
+                # Always open through VISAAdapter; ASRL options are ignored for non-serial resources.
+                newAdapter = pma.VISAAdapter(
+                        resource_name=scpi_info.resource_str,
+                        visa_library=cur_backend,
+                        asrl={'baud_rate': scpi_info.baud_rate}
+                    )
+                newSCPI = type_obj(adapter=newAdapter, name=scpi_info.name)
+                curInstrumentWrapper = Instrument_Entry(
+                    data=scpi_info,
+                    scpi_instrument=newSCPI,
+                )
                 break
         # No extension found, use default instrument class
         if newSCPI is None:
-            logger.debug("No extension found, using default SCPI_Instrument")
-            newSCPI = Instrument(
-                port=scpi_info.port,
-                baud_rate=scpi_info.baud_rate,
+            logger.debug("No extension found, using default pymeasure adapter")
+            # Respect per-instrument backend override when available.
+            bend = scpi_info.backend if scpi_info.backend != "" else cur_backend
+            visaAdapter = pma.VISAAdapter(
+                resource_name=scpi_info.resource_str,
+                visa_library=bend,
+                asrl={'baud_rate': scpi_info.baud_rate},
             )
-    
-        if newSCPI is not None:
-            if not newSCPI.connected:
-                newSCPI.connect()
+            newSCPI = pmi.generic_types.Instrument(visaAdapter, scpi_info.name)
             # Lock the instrument resource
             curInstrumentWrapper = Instrument_Entry(
                 data=scpi_info,

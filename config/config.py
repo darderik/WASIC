@@ -8,18 +8,14 @@ T = TypeVar("T")
 
 default_config = {
     "instr_aliases": ["Raspberry", "Model 2000", "Relay Matrix"],
-    "communication_mode": "pyvisa",
     "instrument_connections_datapath": "data/instr/instruments.json",
     "data_charts_path": "data/charts",
     "data_charts_relative_bkps": "backups",
     "backup_switch": True,
     "backup_schedule": 120,
     "default_timeout": 0.5,
-    "init_properties_types": ["NV34420", "K2000", "RaspberrySIM"],
-    "log_level": "INFO",
+    "log_level": "DEBUG",
 }
-# In init_properties_types one shall add class names of instruments that are
-# meant to display properties on the webapp
 
 # In instr_aliases one shall add keyword to look for while parsing the idn string
 logger = logging.getLogger(__name__)
@@ -35,11 +31,27 @@ class Config:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
                 cls._config_path = config_path
+                cls._instance._registry_loaded = False
                 cls._instance.load_config()
                 cls._instance._data["instruments_extensions"] = (
                     []
                 )  # no need to add to json
+                cls._instance._load_instrument_registry()
         return cls._instance
+
+    def _load_instrument_registry(self) -> None:
+        """Populate in-memory instruments_extensions from addon registry."""
+        if self._registry_loaded:
+            return
+
+        try:
+            from addons.instruments import INSTRUMENT_REGISTRY
+        except (ImportError, AttributeError):
+            return
+
+        for display_name, instrument_type in INSTRUMENT_REGISTRY.values():
+            self.add_instrument_extension((display_name, instrument_type))
+        self._registry_loaded = True
 
     def load_config(self):
         config_path = self._config_path
@@ -60,11 +72,6 @@ class Config:
             )
             self._data = default_config
             
-        # If only a single item [*] then grab all instruments from Config._data["instruments_extensions"]
-        if self._data.get("instr_aliases") == ["*"]:
-            self._data["instr_aliases"] = [
-                ext[0] for ext in self._data.get("instruments_extensions", [])
-            ]
     def is_in_instr_aliases(self, idn_string: str) -> Optional[str]:
         """
         Checks if any of the instrument aliases are present in the given IDN string.
@@ -86,7 +93,10 @@ class Config:
             instr_extension (Any): The instrument extension to add.
         """
         logger.debug(f"Adding instrument extension: {instr_extension}")
-        self._data["instruments_extensions"].append(instr_extension)
+        existing = self._data.get("instruments_extensions", [])
+        if instr_extension not in existing:
+            existing.append(instr_extension)
+            self._data["instruments_extensions"] = existing
 
     @overload
     def get(self, key: str) -> Any:
@@ -114,10 +124,11 @@ class Config:
             - data_charts_path (str): Path to the directory for data charts.
             - default_timeout (float): Default timeout value in seconds.
             - instruments_extensions (List[Any]): List of instrument extensions.
-            - init_properties_types (List[str]): List of instrument class names to display properties.
         """
         if default is None:
             default = default_config.get(key, None)
+        if key == "instruments_extensions" and not self._registry_loaded:
+            self._load_instrument_registry()
         return_val = self._data.get(key, default)
         if key not in self._data:
             logger.warning(

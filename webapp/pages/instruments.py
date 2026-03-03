@@ -1,61 +1,14 @@
 import streamlit as st
-import pandas as pd
-from typing import List
 from connections import Connections
 from config import Config
-from instruments.properties import property_info
-from easy_scpi import Instrument  # Adjust the import path as necessary
-from easy_scpi import helper_methods
-
+from webapp.web_utilities import (
+    craft_property_info_list,
+    send_parameters,
+    create_properties_dataframe,
+)
+from pymeasure.instruments import Instrument
 connections_obj = Connections()
 conf_obj = Config()
-
-
-def send_parameters(
-    instr_properties: List[property_info], edited_data: pd.DataFrame
-) -> None:
-    """Send the edited parameters to the instruments"""
-    for i, prop in enumerate(instr_properties):
-        try:
-            # Get the edited value from the dataframe
-            new_value = edited_data.iloc[i]["Current Value"]
-            supposed_type = prop.typecheck
-
-            # Parse the value based on type
-            if prop.typecheck == bool:
-                parsed_value = helper_methods.val_to_bool(str(new_value))
-            else:
-                parsed_value = supposed_type(new_value)
-
-            # Only update if the value has changed
-            current_value = prop.associated_getter()
-            if parsed_value != current_value:
-                prop.associated_setter(parsed_value)
-                st.success(f"Updated {prop.alias} to {parsed_value}")
-        except Exception as e:
-            st.error(f"Error updating {prop.alias}: {str(e)}")
-
-
-def create_properties_dataframe(instr_properties: List[property_info]) -> pd.DataFrame:
-    """Create a DataFrame from instrument properties for the data editor"""
-    data = []
-    for prop in instr_properties:
-        current_value = prop.associated_getter()
-        # Format boolean values for better display
-        if prop.typecheck == bool:
-            display_value = "ON" if helper_methods.val_to_bool(current_value) else "OFF"
-        else:
-            display_value = str(current_value)
-
-        data.append(
-            {
-                "Property": prop.alias,
-                "Type": prop.typecheck.__name__,
-                "Current Value": display_value,
-            }
-        )
-
-    return pd.DataFrame(data)
 
 
 def instruments_page(alias: str) -> None:
@@ -67,14 +20,13 @@ def instruments_page(alias: str) -> None:
         # Display Instrument Name
         st.subheader(f"🔌 {instr_name}")
 
-        try:
-            has_properties = bool(cur_scpi_instrument.properties_list)
-        except AttributeError:
-            has_properties = False
+        # Tries with getting properties without an allow list
+        instr_properties = getattr(cur_scpi_instrument, "properties_list", None)
+        if not instr_properties:
+            instr_properties = craft_property_info_list(cur_scpi_instrument)
+        has_properties = bool(instr_properties)
 
         if has_properties:
-            instr_properties: List[property_info] = cur_scpi_instrument.properties_list
-
             # Create DataFrame for the data editor
             properties_df = create_properties_dataframe(instr_properties)
 
@@ -121,7 +73,12 @@ def instruments_page(alias: str) -> None:
                     type="primary",
                     key=f"send_params_{alias}",
                 ):
-                    send_parameters(instr_properties, edited_df)
+                    messages = send_parameters(instr_properties, edited_df)
+                    for message in messages:
+                        if message.startswith("Error"):
+                            st.error(message)
+                        else:
+                            st.success(message)
 
             # Display current vs edited comparison if there are changes
             if not properties_df.equals(edited_df):

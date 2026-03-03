@@ -2,13 +2,12 @@
 from typing import List, Tuple, Optional, Any
 from pyvisa.constants import StopBits
 from instruments import SCPI_Info, property_info
-from config import Config
-from .SCPIInstrumentTemplate import SCPIInstrumentTemplate
 import time  # added for inter-command delays
 from threading import RLock
 import re  # added for WFMOutpre parsing
+from pymeasure.instruments import Instrument
 
-class TBS1052C(SCPIInstrumentTemplate):
+class TBS1052C(Instrument):
     """
     Tektronix TBS1052C (TBS1000C series) Oscilloscope
     ==================================================
@@ -52,6 +51,7 @@ class TBS1052C(SCPIInstrumentTemplate):
     def __init__(self, scpi_info: SCPI_Info, **kwargs) -> None:
         super().__init__(
             scpi_info,
+            name=kwargs.get("name", "TBS1052C"),
             timeout=kwargs.get("timeout", 10000),
             backend=kwargs.get("backend", "@py"),
             encoding=kwargs.get("encoding", "latin-1"),
@@ -459,6 +459,3 @@ class TBS1052C(SCPIInstrumentTemplate):
             super().write(msg)
             self._apply_delay(msg)
 
-
-# Optional registration (match your framework's discovery)
-Config().add_instrument_extension(("TBS1052C", TBS1052C))

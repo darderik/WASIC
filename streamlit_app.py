@@ -1,3 +1,7 @@
+from addons.loader import load_addons
+
+load_addons()
+
 import streamlit as st
 from connections import Connections
 from typing import List, Optional

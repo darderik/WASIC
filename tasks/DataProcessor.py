@@ -63,14 +63,14 @@ class DataProcessor:
                 continue
             if last_iteration:
                 #self.cur_task.stop()
-                Tasks().stop_task()
+                Tasks().stop_task(expected=self.cur_task)
                 break
             # Check if time to backup has elapsed
             backup_schedule = Config().get("backup_schedule", 60.0)
             if (datetime.datetime.now() - self.last_backup_time).total_seconds() >= backup_schedule:
                 self.backup_saver()
                 self.last_backup_time = datetime.datetime.now()
-            time.sleep(sleep_time)
+            exit_flag.wait(sleep_time)
 
 
 

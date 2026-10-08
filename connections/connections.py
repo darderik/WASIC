@@ -14,6 +14,7 @@ from pymeasure.instruments.instrument import Instrument
 from serial.tools.list_ports import comports
 
 from config import Config
+from addons.loader import registry
 from instruments import Instrument_Entry, SCPI_Info
 from .baud_detector import BaudTrialDetector
 
@@ -50,6 +51,16 @@ class Connections:
 
         logger.warning("No instrument found with keyword: %s", keyword)
         return None
+
+    def get_instrument_by_driver(self, driver_id: str) -> Optional[Instrument_Entry]:
+        """Resolve a task requirement by registered driver ID, rejecting ambiguity."""
+        with self._instrument_lock:
+            matches = [entry for entry in self.instruments_list
+                       if (spec := registry.match_instrument(entry.data.idn)) is not None
+                       and spec.id == driver_id]
+        if len(matches) > 1:
+            raise ValueError(f"Multiple instruments match driver {driver_id}")
+        return matches[0] if matches else None
 
     def get_instruments_aliases(self, idn: bool = False) -> list[str]:
         with self._instrument_lock:
@@ -261,7 +272,8 @@ class Connections:
             self._safe_close(instrument)
 
     def _build_visa_info(self, resource: str, idn: str) -> Optional[SCPI_Info]:
-        alias = self._config.is_in_instr_aliases(idn)
+        spec = registry.match_instrument(idn)
+        alias = spec.name if spec else self._config.is_in_instr_aliases(idn)
 
         if not alias:
             return None
@@ -282,7 +294,8 @@ class Connections:
         idn: str,
         baud_rate: int,
     ) -> Optional[SCPI_Info]:
-        alias = self._config.is_in_instr_aliases(idn)
+        spec = registry.match_instrument(idn)
+        alias = spec.name if spec else self._config.is_in_instr_aliases(idn)
 
         if not alias:
             return None
@@ -314,10 +327,17 @@ class Connections:
         self,
         info: SCPI_Info,
     ) -> Optional[Instrument_Entry]:
-        custom_class = self._find_custom_instrument_class(info.idn)
-
         try:
-            if custom_class is not None:
+            spec = registry.match_instrument(info.idn)
+            custom_class = self._find_custom_instrument_class(info.idn) if spec is None else None
+            if spec is not None:
+                adapter = self._create_visa_adapter(info)
+                try:
+                    instrument = spec.factory(adapter, info)
+                except Exception:
+                    adapter.close()
+                    raise
+            elif custom_class is not None:
                 instrument = self._create_custom_instrument(info, custom_class)
             else:
                 instrument = self._create_default_instrument(info)

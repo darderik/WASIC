@@ -48,9 +48,9 @@ class TBS1052C(Instrument):
         "FACtory": 0.50,
     }
 
-    def __init__(self, scpi_info: SCPI_Info, **kwargs) -> None:
+    def __init__(self, adapter, **kwargs) -> None:
         super().__init__(
-            scpi_info,
+            adapter,
             name=kwargs.get("name", "TBS1052C"),
             timeout=kwargs.get("timeout", 10000),
             backend=kwargs.get("backend", "@py"),
@@ -462,3 +462,11 @@ class TBS1052C(Instrument):
             super().write(msg)
             self._apply_delay(msg)
 
+
+
+from wasic_api import InstrumentSpec
+
+PLUGIN = InstrumentSpec(
+    id='tbs1052c', name='TBS1052C', idn_keywords=('TBS1052C',),
+    factory=lambda adapter, info: TBS1052C(adapter=adapter, name=info.name),
+)

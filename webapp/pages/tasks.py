@@ -119,21 +119,54 @@ else:
         if selected_task is not None:
             parameters = selected_task.parameters or {}
 
-            edited_parameters = st.data_editor(
-                parameters,
-                key=f"params_{selected_task.name}",
-                use_container_width=True,
-                num_rows="dynamic",
-            )
+            if selected_task.spec:
+                edited_parameters = {}
+                for name, parameter in selected_task.spec.parameters.items():
+                    value = parameters.get(name, parameter.default)
+                    widget_key = f"params_{selected_task.id}_{name}"
+                    if parameter.choices:
+                        edited_parameters[name] = st.selectbox(
+                            name, parameter.choices,
+                            index=parameter.choices.index(value), key=widget_key,
+                            disabled=is_task_running,
+                        )
+                    elif parameter.type is bool:
+                        edited_parameters[name] = st.checkbox(
+                            name, value=bool(value), key=widget_key, disabled=is_task_running,
+                        )
+                    elif parameter.type in (int, float):
+                        convert = parameter.type
+                        edited_parameters[name] = st.number_input(
+                            name, value=convert(value),
+                            min_value=convert(parameter.minimum) if parameter.minimum is not None else None,
+                            max_value=convert(parameter.maximum) if parameter.maximum is not None else None,
+                            key=widget_key, disabled=is_task_running,
+                        )
+                    else:
+                        edited_parameters[name] = st.text_input(
+                            name, value=str(value), key=widget_key, disabled=is_task_running,
+                        )
+            else:
+                edited_parameters = st.data_editor(
+                    parameters, key=f"params_{selected_task.name}",
+                    use_container_width=True, num_rows="dynamic", disabled=is_task_running,
+                )
 
             if st.button(
                 "Save parameters",
                 use_container_width=True,
                 type="secondary",
+                disabled=is_task_running,
             ):
                 if edited_parameters != parameters:
-                    selected_task.parameters = edited_parameters
-                    st.success("Parameters updated.")
+                    try:
+                        selected_task.parameters = (
+                            selected_task.spec.parse_parameters(edited_parameters)
+                            if selected_task.spec else edited_parameters
+                        )
+                        st.success("Parameters updated.")
+                    except (ValueError, TypeError) as exc:
+                        st.error(str(exc))
                 else:
                     st.info("No parameter changes to save.")
 

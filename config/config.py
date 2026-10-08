@@ -31,27 +31,11 @@ class Config:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
                 cls._config_path = config_path
-                cls._instance._registry_loaded = False
                 cls._instance.load_config()
                 cls._instance._data["instruments_extensions"] = (
                     []
                 )  # no need to add to json
-                cls._instance._load_instrument_registry()
         return cls._instance
-
-    def _load_instrument_registry(self) -> None:
-        """Populate in-memory instruments_extensions from addon registry."""
-        if self._registry_loaded:
-            return
-
-        try:
-            from addons.instruments import INSTRUMENT_REGISTRY
-        except (ImportError, AttributeError):
-            return
-
-        for display_name, instrument_type in INSTRUMENT_REGISTRY.values():
-            self.add_instrument_extension((display_name, instrument_type))
-        self._registry_loaded = True
 
     def load_config(self):
         config_path = self._config_path
@@ -128,8 +112,6 @@ class Config:
         """
         if default is None:
             default = default_config.get(key, None)
-        if key == "instruments_extensions" and not self._registry_loaded:
-            self._load_instrument_registry()
         return_val = self._data.get(key, default)
         if key not in self._data:
             logger.warning(

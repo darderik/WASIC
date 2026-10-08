@@ -22,6 +22,7 @@
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [Project Structure](#project-structure)
+- [Extending WASIC](#extending-wasic)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
@@ -173,7 +174,7 @@ After installation, the application automatically creates a `config.json` file w
 }
 ```
 
-**Customizing aliases**: Add instrument keywords to `instr_aliases` to automatically identify connected instruments.
+**Customizing aliases**: Add IDN keywords to `instr_aliases` for generic devices. Registered instrument addons provide their own recognition keywords.
 
 ### Instrument Configuration
 
@@ -222,7 +223,7 @@ WASIC/
 │   └── config.json           # User configuration file
 ├── connections/              # Instrument connection handling
 │   ├── connections.py        # Device discovery and management
-│   └── utilities.py          # Serial/USB detection helpers
+│   └── baud_detector.py          # Serial/USB detection helpers
 ├── instruments/              # Core instrument abstractions
 │   ├── instrument_entry.py   # Instrument wrapper class
 │   └── properties.py         # Instrument property definitions
@@ -230,7 +231,9 @@ WASIC/
 │   ├── task.py              # Base task class
 │   ├── DataProcessor.py     # Real-time data processing
 │   └── structures.py        # Data structure definitions
+├── wasic_api.py              # Stable addon contracts
 ├── addons/                   # Extensible instrument drivers & tasks
+│   ├── loader.py             # Recursive addon discovery and validation
 │   ├── instruments/         # Custom instrument drivers
 │   └── tasks/              # Custom measurement tasks
 ├── webapp/                   # Streamlit web application
@@ -241,7 +244,6 @@ WASIC/
 │   │   ├── charts.py      # Data visualization
 │   │   └── logs.py        # Log viewer
 │   └── web_utilities.py    # UI helpers
-├── easy_scpi/               # SCPI command abstraction
 ├── data/                    # Runtime data directory (auto-created)
 │   ├── charts/             # Measurement data (JSON)
 │   ├── instr/              # Instrument configurations
@@ -253,74 +255,152 @@ WASIC/
 
 ## Extending WASIC
 
-### Registering a new task
+Addons are self-contained Python modules. Each module exports a `PLUGIN` definition
+from `wasic_api.py`; there is no central import list or registration callback to edit.
+The loader discovers modules recursively in `addons/tasks/` and `addons/instruments/`,
+including nested directories. Modules starting with `_` are ignored. Helper modules
+without `PLUGIN` are allowed. Keep all module-level code lightweight: discovery imports
+modules but must not connect hardware, start threads, or run measurements.
 
-1. Create a new Python module in `addons/tasks/`, for example `addons/tasks/my_task.py`.
-2. Define a task function with the signature `def my_task_function(task_obj: Task) -> None:` and use `task_obj.data` and `task_obj.parameters` to produce `ChartData` objects.
-3. Add an initialization function that creates a `Task` instance and adds it to the global task manager:
+### Adding a task
+
+Create `addons/tasks/my_task.py`:
 
 ```python
-from tasks import Task, Tasks
+from tasks import ChartData
+from wasic_api import TaskSpec, TaskContext, ParameterSpec
 
-def init_my_task() -> None:
-    my_task = Task(
-        name="My Custom Task",
-        description="Description of my custom task.",
-        instrs_aliases=["MyInstrumentAlias"],
-        function=my_task_function,
-        parameters={
-            "update_interval": "1",
-            "my_parameter": "value",
-        },
-    )
-    Tasks().add_task(my_task)
+
+def run(ctx: TaskContext) -> None:
+    chart = ChartData(name="Example")
+    chart.configure_x_axis(label="Sample", unit="")
+    chart.configure_y_axis(label="Value", unit="")
+    ctx.data.append(chart)
+    sample = 0
+    while not ctx.exit_flag.is_set():
+        chart.add_processed_pair(sample, sample * 2.0)
+        sample += 1
+        if ctx.exit_flag.wait(ctx.parameters["update_interval"]):
+            break
+
+
+PLUGIN = TaskSpec(
+    id="my_task",
+    name="My task",
+    description="A minimal measurement example without hardware.",
+    run=run,
+    parameters={
+        "update_interval": ParameterSpec(float, 1.0, minimum=0.01),
+        "merge_chart_files": ParameterSpec(bool, False),
+    },
+)
 ```
 
-4. Register the init function in `addons/tasks/__init__.py`:
+Restart WASIC: the task appears automatically. The complete runnable example is
+[`addons/tasks/test_task.py`](addons/tasks/test_task.py), shown as **Test Charts**.
+It needs no connected instruments and generates four charts.
+
+`TaskContext` exposes the current run's data list, stop event, typed parameters and
+instruments mapped by role. Return normally or raise an exception to finish the run;
+the runtime handles logging and signals completion. Use `exit_flag.wait(interval)`
+for responsive cancellation. The context's parameters are validated at launch and
+cannot be edited through the UI while a task runs.
+
+Parameter types are `str`, `int`, `float` and `bool`. Definitions support `minimum`,
+`maximum` and `choices`; the UI generates appropriate controls. Unknown parameters,
+invalid values and nonfinite floats are rejected. `merge_chart_files` is an optional
+runtime setting: declare it as a boolean to expose it in the UI; omitted means false.
+
+For hardware, declare roles using **driver IDs**, then use the resolved driver:
 
 ```python
-from .my_task import init_my_task
-
-# existing imports ...
-
-task_obj.add_init_task(init_my_task)
+# Within TaskSpec:
+# instruments={"meter": "keithley2000"}
+# Within run(ctx):
+# meter = ctx.instruments["meter"]
 ```
 
-5. Restart WASIC. The main application imports `addons.tasks` at startup, so the new task will be registered automatically.
+See [`addons/tasks/pid_pai/thermal_meas.py`](addons/tasks/pid_pai/thermal_meas.py).
+Tasks do not need to import `Connections`, instantiate `Tasks`, or repeat IDN strings.
+Missing or multiple devices matching a required driver make the task unavailable;
+explicit selection of multiple identical instruments is not yet supported.
 
-### Registering a new instrument
+### Adding an instrument
 
-1. Create a new instrument driver file in `addons/instruments/`, for example `addons/instruments/MyInstrument.py`.
-2. Implement a custom instrument class that accepts an adapter and a name, typically by subclassing `pymeasure.instruments.Instrument` or a compatible SCPI mixin:
+Create `addons/instruments/my_instrument.py`:
 
 ```python
-from instruments import property_info
-import pymeasure.adapters as pma
-from pymeasure.instruments import Instrument, SCPIMixin
+from pymeasure.instruments import Instrument
+from wasic_api import InstrumentSpec
 
-class MyInstrument(SCPIMixin, Instrument):
-    def __init__(self, adapter, name, **kwargs):
+
+class MyInstrument(Instrument):
+    def __init__(self, adapter, name):
         super().__init__(adapter, name=name)
-        self.init_properties()
-
-    def init_properties(self) -> None:
         self.properties_list = []
+
+
+PLUGIN = InstrumentSpec(
+    id="my_instrument",
+    name="My instrument",
+    idn_keywords=("MyInstrumentModel",),
+    factory=lambda adapter, info: MyInstrument(adapter, name=info.name),
+)
 ```
 
-3. Add the new instrument class to `addons/instruments/__init__.py` and register it in `INSTRUMENT_REGISTRY`:
+The core provides a transport adapter and `SCPI_Info` to the factory. The factory
+adapts the driver's constructor and returns a PyMeasure-compatible instrument.
+The same IDN keywords identify the device during discovery and select its driver:
+**no additional `instr_aliases` entry is needed**. Matching is case-insensitive;
+if multiple definitions match an IDN, it is rejected instead of silently choosing one.
+`instr_aliases` remains the fallback for generic SCPI devices without an addon.
+
+Use `property_info` entries in `properties_list` for editable instrument properties;
+the UI also supports introspection for existing drivers. A wrapper for a third-party
+driver is demonstrated in
+[`addons/instruments/keithley2000.py`](addons/instruments/keithley2000.py).
+
+### Loading addons and migrating older extensions
+
+Application startup and direct `streamlit run streamlit_app.py` call `load_addons()`.
+Library users must call it explicitly before running tasks:
 
 ```python
-from .MyInstrument import MyInstrument
+from addons.loader import load_addons
+from tasks import Tasks
 
-INSTRUMENT_REGISTRY = {
-    "MyInstrument": ("MyInstrumentIDN", MyInstrument),
-    # existing entries...
-}
+registry = load_addons()
+Tasks().run_task("Test Charts")
 ```
 
-4. Choose an IDN substring for the registry entry that matches the instrument's `*IDN?` response. The string is matched case-insensitively against the connected device IDN.
-5. Optionally add the same alias to `config.json` under `instr_aliases` if you want it included in generic instrument discovery as well.
-6. Restart WASIC. The instrument registry is loaded from `addons/instruments` through `config.Config`, so the custom instrument class will be available during discovery.
+Loading is idempotent and preserves edited task parameters on Streamlit reruns.
+Unique IDs are required within each addon category; task display names must also be
+unique. Invalid addons are logged individually and listed in `registry.errors`, so
+one broken import does not prevent other modules from loading. Inspect the Logs page
+or `data/wasic.log` when an addon is missing. Restart after adding, removing or fixing
+modules; hot reload is not supported.
+
+To migrate an old task, replace `init_*()` and its `__init__.py` registration with a
+`TaskSpec`; change the function argument to `TaskContext`, convert parameter defaults
+to `ParameterSpec`, and replace singleton lookups with named instrument roles.
+For instruments, move the former `INSTRUMENT_REGISTRY` entry into the driver's
+`InstrumentSpec`. `Config` no longer imports addon implementations.
+
+Direct programmatic `Task(...)`, `Tasks.add_task()` / `add_init_task()` and
+`Config.add_instrument_extension()` remain available for legacy library code.
+Importing `addons.tasks` alone no longer registers tasks, and the old instrument
+registry/export list has been removed. Import driver classes from their modules.
+See [`wasic_test.py`](wasic_test.py) for the hardware library bootstrap example.
+
+### Validation
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Contract and discovery tests use the standard library. Runtime integration tests
+require project dependencies and run with simulated instruments, without probing
+hardware. Hardware communication still needs verification with real devices.
 
 ## Troubleshooting
 

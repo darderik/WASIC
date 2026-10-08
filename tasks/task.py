@@ -1,7 +1,8 @@
 from math import e
 from config import Config
 from typing import List, Callable, Dict, Any, Optional
-from threading import Thread, Event, Lock, RLock
+from threading import Thread, Event, Lock, RLock, current_thread
+from wasic_api import TaskSpec, TaskContext
 from instruments import Instrument_Entry
 from .structures import ChartData
 from .helper import str_to_bool
@@ -27,11 +28,12 @@ class Task:
         name: str,
         description: str,
         instrs_aliases: List[str],
-        function: Callable[["Task"], None],
+        function: Callable[..., None],
         data: Optional[List[ChartData]] = None,
         custom_alias: str = "",
         custom_web_status: Optional[Callable] = None,
-        parameters: Dict[str, Any] = {"merge_chart_files":"false"},
+        parameters: Optional[Dict[str, Any]] = None,
+        spec: Optional[TaskSpec] = None,
     ):
         self.name = name
         self.description = description
@@ -44,25 +46,59 @@ class Task:
         self._config = Config()
         self.custom_web_status = custom_web_status
         self.thread_handle: Optional[Thread] = None
-        self.parameters: Dict[str, str] = parameters
+        self.parameters: Dict[str, Any] = dict(parameters) if parameters is not None else {"merge_chart_files": "false"}
+        self.spec = spec
+        self.id = spec.id if spec else name
         self.running: bool = False
         self._rlock = RLock()
+
+    @classmethod
+    def from_spec(cls, spec: TaskSpec) -> "Task":
+        return cls(name=spec.name, description=spec.description,
+                   instrs_aliases=[], function=spec.run,
+                   parameters=spec.parse_parameters({}), spec=spec)
+
+    def resolve_instruments(self) -> dict:
+        resolved = {}
+        if self.spec:
+            for role, driver_id in self.spec.instruments.items():
+                entry = Connections().get_instrument_by_driver(driver_id)
+                if entry is None:
+                    raise ValueError(f"Missing instrument for {role}: {driver_id}")
+                resolved[role] = entry.scpi_instrument
+        return resolved
+
+    def _execute(self, context) -> None:
+        try:
+            self.function(context)
+        except Exception:
+            logger.exception("Task %s failed", self.name)
+        finally:
+            self.exit_flag.set()
 
     def start(self) -> None:
         """Starts the task's function in a new non-blocking thread if not already running."""
         with self._rlock:
-            if self.thread_handle is None or not self.thread_handle.is_alive() and not self.running:
+            if not self.running and (self.thread_handle is None or not self.thread_handle.is_alive()):
+                context = self
+                if self.spec:
+                    instruments = self.resolve_instruments()
+                    self.instruments = [Connections().get_instrument_by_driver(driver_id)
+                                        for driver_id in self.spec.instruments.values()]
+                    parameters = self.spec.parse_parameters(self.parameters)
+                    self.parameters = parameters
+                    context = TaskContext(instruments, parameters, self.data, self.exit_flag)
                 self.exit_flag.clear()
+                self.running = True
                 # Task thread
                 self.thread_handle = Thread(
-                    target=self.function, args=(self,)
+                    target=self._execute, args=(context,)
                 )
                 self.thread_handle.start()
                 # Data processor thread
                 from .DataProcessor import DataProcessor
                 self.data_processor_obj: Optional[DataProcessor] = DataProcessor(self)
                 self.data_processor = self.data_processor_obj.start()
-                self.running = True
 
                 logger.info(f"Task {self.name} started.")
             else:
@@ -76,11 +112,15 @@ class Task:
     def stop(self) -> None:
         """Signals the task to stop and waits for the thread to finish."""
         with self._rlock:
+            self.exit_flag.set()
             if self.thread_handle and self.thread_handle.is_alive():
                 self.exit_flag.set()
                 self.thread_handle.join()
                 logger.info(f"Task {self.name} stopped.")
-            if  self.running:
+            processor = getattr(self, "data_processor", None)
+            if processor and processor is not current_thread() and processor.is_alive():
+                processor.join()
+            if self.running:
                 self.thread_handle = None
                 self._save_chart_data()
                 self.data.clear()
@@ -91,7 +131,8 @@ class Task:
         if self.custom_alias == "":
             self.custom_alias = "anonymous"
         try:
-            if not str_to_bool(self.parameters.get("merge_chart_files", "false").lower()):
+            os.makedirs(Config().get("data_charts_path"), exist_ok=True)
+            if not str_to_bool(str(self.parameters.get("merge_chart_files", "false")).lower()):
                 for chart in self.data:
                     file_name = f"{chart.name}_{self.custom_alias}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"
                     file_path = os.path.join(Config().get("data_charts_path"), file_name)
@@ -117,6 +158,12 @@ class Task:
 
     def has_instruments(self) -> bool:
         """Checks if all associated instruments are available."""
+        if self.spec:
+            try:
+                self.resolve_instruments()
+                return True
+            except ValueError:
+                return False
         conn_obj = Connections()
         return all(
             conn_obj.get_instrument(alias) is not None for alias in self.instr_aliases
@@ -143,8 +190,15 @@ class Tasks:
             self._initialized = True
             self._tasks_list: List[Task] = []
             self._is_running: Optional[Task] = None
+            self._stopping = False
             self._tasks_init_list: List[Callable[[], None]] = []
             logger.info("Tasks manager instance created.")
+
+    def load_specs(self, specs) -> None:
+        """Register definitions once, preserving edited parameters on UI reruns."""
+        for spec in specs:
+            if not any(task.id == spec.id for task in self._tasks_list):
+                self.add_task(Task.from_spec(spec))
 
     def add_init_task(self, task: Callable[[], None]) -> None:
         """Adds and initializes a task."""
@@ -160,10 +214,17 @@ class Tasks:
     def update_instruments(self, mode: int = 0) -> None:
         """Updates the instruments for all tasks."""
         with self._lock:
+            if mode:
+                Connections().fetch_all_instruments(Config().get("instr_aliases"))
             for tsk in self._tasks_list:
                 tsk.instruments = []
-                if mode:
-                    Connections().fetch_all_instruments(Config().get("instr_aliases"))
+                if tsk.spec:
+                    try:
+                        tsk.instruments = [Connections().get_instrument_by_driver(driver_id)
+                                           for driver_id in tsk.spec.instruments.values()]
+                    except ValueError:
+                        logger.exception("Cannot resolve instruments for %s", tsk.name)
+                    continue
                 for instr_alias in tsk.instr_aliases:
                     conn_obj: Connections = Connections()
                     instr = conn_obj.get_instrument(instr_alias)
@@ -173,33 +234,43 @@ class Tasks:
     def run_task(self, name: str) -> None:
         """Runs a task by its name if no other task is currently running."""
         with self._lock:
-            if self._is_running is None:
+            if self._is_running is None and not self._stopping:
                 for task in self._tasks_list:
                     if task.name == name and task.has_instruments():
-                        task.start()
+                        try:
+                            task.start()
+                        except (ValueError, TypeError):
+                            logger.exception("Cannot start task %s", task.name)
+                            return
                         self._is_running = task
                         break
                 else:
                     logger.warning(f"Task {name} not found or has no instruments.")
             else:
                 logger.warning(
-                    f"A task is already running ({self._is_running.name}). "
+                    f"A task is already running or stopping. "
                     f"Aborting launch of task {name}."
                 )
 
-    def stop_task(self) -> None:
-        """Stops the currently running task, if any."""
+    def stop_task(self, expected: Optional[Task] = None) -> None:
+        """Stop outside the manager lock so the watchdog can finish safely."""
         with self._lock:
-            if self._is_running is not None:
-                self._is_running.stop()
-                self._is_running = None
-                logger.info("Task stopped.")
+            task = self._is_running
+            if task is None or (expected is not None and task is not expected):
+                return
+            self._is_running = None
+            self._stopping = True
+        try:
+            task.stop()
+            logger.info("Task stopped.")
+        finally:
+            with self._lock:
+                self._stopping = False
 
     def check(self) -> None:
-
-        if self._is_running is not None and self._is_running.exit_flag.is_set():
-            self._is_running.check()
-            self._is_running = None
+        task = self._is_running
+        if task is not None and task.exit_flag.is_set():
+            self.stop_task(expected=task)
 
     def add_task(self, task: Task) -> None:
         """Adds a new task to the task list."""

@@ -142,3 +142,12 @@ class RelayMatrix(SCPIMixin, Instrument):
         """
         return self.idn()
 
+
+
+from wasic_api import InstrumentSpec
+
+PLUGIN = InstrumentSpec(
+    id='relay_matrix', name='Relay Matrix', idn_keywords=('Relay Matrix',),
+    factory=lambda adapter, info: RelayMatrix(adapter=adapter, name=info.name),
+)
+

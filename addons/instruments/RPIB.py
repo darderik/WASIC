@@ -129,3 +129,11 @@ class RPIB(SCPIMixin, Instrument):
 	def trigger(self) -> None:
 		self.write("TRIG")
 
+
+
+from wasic_api import InstrumentSpec
+
+PLUGIN = InstrumentSpec(
+    id='rpib', name='RPIB', idn_keywords=('rpb', 'Raspberry'),
+    factory=lambda adapter, info: RPIB(adapter=adapter, name=info.name),
+)

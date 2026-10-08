@@ -6,11 +6,9 @@ import streamlit.web.bootstrap
 from config import Config
 from tasks import Tasks
 from connections import Connections
-from wasic_test import use_as_library
 import threading
 
-# Initialize addon tasks (registers instrument extensions and task types)
-import addons.tasks  # noqa: F401
+from addons.loader import load_addons
 def init_wasic():
     # Create the directory if it doesn't exist
     os.makedirs("data", exist_ok=True)
@@ -44,6 +42,7 @@ def main():
     script_path=init_wasic()
 
     # End override code -----------
+    load_addons()
     Connections().fetch_all_instruments()
     Tasks().run_task("Thermal tracking")
     streamlit.web.bootstrap.run(script_path, False, [], {})

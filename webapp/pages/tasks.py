@@ -1,280 +1,315 @@
 from typing import List, Optional, cast
+
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
+
 from tasks import ChartData, Task, Tasks
-from webapp import (
-    make_plotly_figure,
-)
+from webapp import make_plotly_figure
+
 
 tasks_obj = Tasks()
 
+CHART_TYPES = ["scatter", "line", "histogram"]
 
-def set_custom_alias() -> None:
-    changedAlias: str = st.session_state["task_alias"]
+
+def update_task_alias() -> None:
     if tasks_obj._is_running is not None:
-        tasks_obj._is_running.custom_alias = changedAlias
+        tasks_obj._is_running.custom_alias = st.session_state.get("task_alias", "")
+
+
+def render_data_metrics(chart: ChartData) -> None:
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.metric(
+            "Raw data points",
+            f"{len(chart.x_series.raw)} X, {len(chart.y_series.raw)} Y",
+        )
+
+    with col2:
+        st.metric(
+            "Processed data points",
+            f"{len(chart.x_series.processed)} X, {len(chart.y_series.processed)} Y",
+        )
+
+
+def get_latest_common_index(charts: List[ChartData]) -> int:
+    indices = []
+
+    for chart in charts:
+        x_count = len(chart.x_series.processed) if chart.x_series else 0
+        y_count = len(chart.y_series.processed) if chart.y_series else 0
+
+        if chart.x_series and chart.y_series:
+            indices.append(min(x_count, y_count))
+        else:
+            indices.append(max(x_count, y_count))
+
+    return max(min(indices), 0) if indices else 0
 
 
 @st.fragment(run_every=2)
-def chart_update_frag(
-    curDataList, paused, chart_placeholders, count_placeholders
+def update_charts(
+    data: List[ChartData],
+    paused: bool,
+    chart_placeholders: List[DeltaGenerator],
+    metric_placeholders: List[DeltaGenerator],
 ) -> None:
-    if is_task_running and tasks_obj._is_running is not None:
-        # Update counts and charts
-        for idx in range(min(len(curDataList), len(chart_placeholders))):
-            curChartData = curDataList[idx]
-            # Update count information
-            curChartData = cast(ChartData, curChartData)
-            with count_placeholders[idx]:
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric(
-                        label="📊 Raw Data Points",
-                        value=f"{len(curChartData.x_series.raw)} X, {len(curChartData.y_series.raw)} Y",
-                    )
-                with col2:
-                    st.metric(
-                        label="⚡ Processed Data Points",
-                        value=f"{len(curChartData.x_series.processed)} X, {len(curChartData.y_series.processed)} Y",
-                    )
+    if paused or tasks_obj._is_running is None:
+        return
 
-            # Update chart if not paused
-            if not paused:
-                fig = make_plotly_figure(curChartData)
-                chart_placeholders[idx].plotly_chart(
-                    fig,
-                    use_container_width=True,
-                )
+    for idx, chart in enumerate(data[: len(chart_placeholders)]):
+        with metric_placeholders[idx]:
+            render_data_metrics(chart)
+
+        fig = make_plotly_figure(chart)
+        chart_placeholders[idx].plotly_chart(fig, use_container_width=True)
 
 
-# Check if a task is currently running
-is_task_running: bool = tasks_obj._is_running is not None
+is_task_running = tasks_obj._is_running is not None
+available_tasks = [
+    task.name for task in tasks_obj._tasks_list if task.has_instruments()
+]
 
-# Set the main title of the page with a container for better spacing
-with st.container():
-    st.title("🔧 Tasks Selector")    
-    if not is_task_running:
-        st.markdown("### 🎯 Select and Run a Task")
-    else:
-        st.success("✅ Task is currently running", icon="✨")
 
-    col_task, col_params, col_run = st.columns([2, 2, 1])
+st.title("Task Manager")
+st.caption("Select a task, configure its parameters, and monitor live data.")
 
-    relevant_tasks = [
-        tsk.name for tsk in tasks_obj._tasks_list if tsk.has_instruments()
-    ]
-    if relevant_tasks == [] and not is_task_running:
-        st.warning("⚠️ No tasks available. Connect the instruments and refresh.")
-        if st.button(
-            "🔄 Refresh Instruments",
-            on_click=tasks_obj.update_instruments,
-            args=(1,),
-            use_container_width=True,
-        ):
-            st.rerun(scope="app")
-    
-    else:
-        with col_task:
-            # Determine the index to show in the selectbox
-            if is_task_running and tasks_obj._is_running is not None:
-                running_task_name = tasks_obj._is_running.name
-                # Find the index of the running task in the list
-                default_index = relevant_tasks.index(running_task_name) if running_task_name in relevant_tasks else 0
-            else:
-                default_index = 0
-            
-            task_selectbox: str = st.selectbox(
-                "Select Task",
-                relevant_tasks,
-                index=default_index,
-                disabled=is_task_running,
-                help="Choose a task to execute.",
+if not available_tasks and not is_task_running:
+    st.warning("No tasks are available. Check the connected instruments and refresh.")
+
+    if st.button(
+        "Refresh instruments",
+        on_click=tasks_obj.update_instruments,
+        args=(1,),
+        use_container_width=True,
+    ):
+        st.rerun(scope="app")
+
+else:
+    st.header("Task setup")
+
+    task_col, config_col, action_col = st.columns([1.5, 2, 1])
+
+    with task_col:
+        st.subheader("Task")
+
+        if is_task_running and tasks_obj._is_running is not None:
+            running_name = tasks_obj._is_running.name
+            default_index = (
+                available_tasks.index(running_name)
+                if running_name in available_tasks
+                else 0
             )
-        with col_params:
-            if task_selectbox:
-                task_obj = tasks_obj.get_task(task_selectbox)
-                if task_obj is not None:
-                    with st.expander("⚙️ Edit Task Parameters", expanded=True):
-                        # Display dictionary in an editable format using st.data_editor
-                        parameters_dict = task_obj.parameters or {}
-                        st.markdown("##### Parameters")
-                        edited_parameters = st.data_editor(
-                            parameters_dict,
-                            key=f"params_{task_obj.name}",
-                            use_container_width=True,
-                            num_rows="dynamic"
-                        )
-                        # Add an update parameters button
-                        if st.button(
-                            "🔄 Update Parameters",
-                            help="Apply changes to task parameters",
-                            use_container_width=True,
-                            type="secondary"
-                        ):
-                            if edited_parameters != parameters_dict:
-                                task_obj.parameters = edited_parameters
-                                st.success("✅ Parameters updated successfully!", icon="✨")
+        else:
+            default_index = 0
 
-        with col_run:
-            st.button(
-                "🚀 Run Task",
-                on_click=tasks_obj.run_task,
-                args=(task_selectbox,),
-                disabled=is_task_running,
-                key="run_task_button",
-                help="Start the selected task.",
+        selected_task_name = st.selectbox(
+            "Select task",
+            available_tasks,
+            index=default_index,
+            disabled=is_task_running,
+        )
+
+    with config_col:
+        st.subheader("Parameters")
+
+        selected_task = tasks_obj.get_task(selected_task_name)
+
+        if selected_task is not None:
+            parameters = selected_task.parameters or {}
+
+            edited_parameters = st.data_editor(
+                parameters,
+                key=f"params_{selected_task.name}",
                 use_container_width=True,
+                num_rows="dynamic",
             )
-        with col_run:
-            st.button(
-                "🔄 Match Instruments",
-                on_click=tasks_obj.update_instruments,
-                key="refresh_matched_instruments",
-                help="Refresh each task's matched instruments.",
+
+            if st.button(
+                "Save parameters",
                 use_container_width=True,
-                type="secondary"
-            )# Display task details and controls if a task is running
-if is_task_running and tasks_obj._is_running is not None:
-    cur_task: Task = tasks_obj._is_running
-
-    st.markdown("---")
-    st.markdown("### ⚙️ Current Task")
-
-    # Task Details in a nice layout
-    with st.container():
-        col1, col2 = st.columns([2, 1])
-
-        with col1:
-            with st.expander("📋 Task Details", expanded=True):
-                st.markdown(f"**Name:** `{cur_task.name}`")
-                st.markdown(f"**Description:** {cur_task.description}")
-
-        with col2:
-            with st.expander("🔌 Instruments", expanded=True):
-                if cur_task.instruments:
-                    for i, instr in enumerate(cur_task.instruments, 1):
-                        if instr is not None:
-                            st.markdown(f"**{i}.** `{instr.data.idn}`")
+                type="secondary",
+            ):
+                if edited_parameters != parameters:
+                    selected_task.parameters = edited_parameters
+                    st.success("Parameters updated.")
                 else:
-                    st.info("No instruments associated.")
-            
+                    st.info("No parameter changes to save.")
 
-    col_alias, col_stop = st.columns([2, 1])
+    with action_col:
+        st.subheader("Actions")
 
-
-    with col_stop:
-        with col_alias:
-            with st.expander("✏️ Edit Task Alias", expanded=True):
-                st.text_input(
-                    "Task Alias",
-                    value=cur_task.custom_alias or "",
-                    key="task_alias",
-                    on_change=set_custom_alias,
-                    help="Set a custom alias for the running task for easier identification.",
-                )
-        st.markdown("")  # Add spacing to align with text input
-        st.markdown("")
         st.button(
-            "🛑 Stop Task",
-            on_click=tasks_obj.stop_task,
-            key="stop_task_button",
-            help="Stop the currently running task",
+            "Run task",
+            on_click=tasks_obj.run_task,
+            args=(selected_task_name,),
+            disabled=is_task_running,
+            key="run_task_button",
             use_container_width=True,
             type="primary",
         )
-    # Custom GUI if specified in the task object
-    #   with st.container():
-    # Display Data Visualization
 
-# Data Visualization Section
+        st.button(
+            "Refresh instruments",
+            on_click=tasks_obj.update_instruments,
+            key="refresh_matched_instruments",
+            use_container_width=True,
+            type="secondary",
+        )
+
+
 if is_task_running and tasks_obj._is_running is not None:
-    st.markdown("---")
-    st.markdown("### 📊 Data Visualization")
-
     running_task: Task = tasks_obj._is_running
-    curDataList: Optional[List[ChartData]] = running_task.data
 
-    if curDataList:
-        # Control panel
-        with st.container():
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.markdown("**Real-time Data Monitoring**")
-            with col2:
-                paused = st.checkbox("⏸️ Pause Updates", False)
+    st.divider()
+    st.header("Running task")
 
-        st.markdown("---")
-        
-        # Create placeholders for each chart
-        chart_placeholders: List[DeltaGenerator] = []
-        count_placeholders: List[DeltaGenerator] = []
-        num_charts = len(curDataList)
+    details_col, instruments_col = st.columns([2, 1])
 
-        for i, chart in enumerate(curDataList):
-            # Chart container
-            with st.container():
-                st.markdown(f"#### 📈 {chart.name}")
-                  # Chart type selector - available for all charts during execution
-                curChartData = cast(ChartData, chart)
-                curChartData.config.custom_type = st.selectbox(
-                    "Select Chart Type",
-                    ["scatter", "line", "histogram"],
-                    index=["scatter", "line", "histogram"].index(
-                        curChartData.config.custom_type
-                        if curChartData.config.custom_type in ["scatter", "line", "histogram"]
-                        else "scatter"
-                    ),
-                    key=f"chart_type_{running_task.name}_{i}",
-                    help="Change the chart type for visualization.",
-                )
-                
-                # Metrics row
-                count_placeholder: DeltaGenerator = st.empty()
-                count_placeholders.append(count_placeholder)
-                
-                # Chart row
-                chart_placeholder: DeltaGenerator = st.empty()
-                chart_placeholders.append(chart_placeholder)
-                
-                if i < len(curDataList) - 1:  # Add separator except for last chart
-                    st.markdown("---")
+    with details_col:
+        with st.container(border=True):
+            st.subheader("Details")
+            st.markdown(f"**Name:** `{running_task.name}`")
 
-        # Handle paused state
-        if paused:
-            # Show static charts when paused
-            for idx in range(min(len(curDataList), len(chart_placeholders))):
-                curChartData = curDataList[idx]
-                curChartData = cast(ChartData, curChartData)
+            if running_task.description:
+                st.markdown(f"**Description:** {running_task.description}")
+            else:
+                st.caption("No description available.")
 
-                # Update static metrics
-                with count_placeholders[idx]:
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric(
-                            label="📊 Raw Data Points",
-                            value=f"{len(curChartData.x_series.raw)} X, {len(curChartData.y_series.raw)} Y",
-                        )
-                    with col2:
-                        st.metric(
-                            label="⚡ Processed Data Points",
-                            value=f"{len(curChartData.x_series.processed)} X, {len(curChartData.y_series.processed)} Y",
-                        )
+    with instruments_col:
+        with st.container(border=True):
+            st.subheader("Instruments")
 
-                # Show static chart
-                fig = make_plotly_figure(curChartData)
-                chart_placeholders[idx].plotly_chart(
-                    fig,
-                    use_container_width=True,
-                )
-        else:
-            # Use fragment for real-time updates
-            chart_update_frag(
-                curDataList=curDataList,
-                paused=paused,
-                chart_placeholders=chart_placeholders,
-                count_placeholders=count_placeholders,
-            )
+            if running_task.instruments:
+                for index, instrument in enumerate(running_task.instruments, start=1):
+                    if instrument is not None:
+                        st.markdown(f"**{index}.** `{instrument.data.idn}`")
+            else:
+                st.info("No instruments associated with this task.")
+
+    alias_col, stop_col = st.columns([3, 1])
+
+    with alias_col:
+        st.text_input(
+            "Task alias",
+            value=running_task.custom_alias or "",
+            key="task_alias",
+            on_change=update_task_alias,
+            help="Optional custom name for the running task.",
+        )
+
+    with stop_col:
+        st.write("")
+        st.button(
+            "Stop task",
+            on_click=tasks_obj.stop_task,
+            key="stop_task_button",
+            use_container_width=True,
+            type="primary",
+        )
+
+
+if is_task_running and tasks_obj._is_running is not None:
+    running_task = tasks_obj._is_running
+    data: Optional[List[ChartData]] = running_task.data
+
+    st.divider()
+    st.header("Live data")
+
+    if not data:
+        st.info("Waiting for data from the running task...")
     else:
-        st.info("⏳ Waiting for data from the running task...")
+        plot_from_index_key = f"plot_from_index_{running_task.name}"
+
+        shared_start_indices = {chart.config.start_index for chart in data}
+        default_start_index = (
+            shared_start_indices.pop()
+            if len(shared_start_indices) == 1
+            else 0
+        )
+
+        if plot_from_index_key not in st.session_state:
+            st.session_state[plot_from_index_key] = default_start_index
+
+        with st.container(border=True):
+            st.subheader("Display controls")
+
+            reset_col, all_col, pause_col, index_col = st.columns([1, 1, 1, 1])
+
+            with reset_col:
+                if st.button("Reset view", use_container_width=True):
+                    start_index = get_latest_common_index(data)
+
+                    for chart in data:
+                        chart.config.start_index = start_index
+
+                    st.session_state[plot_from_index_key] = start_index
+
+            with all_col:
+                if st.button("Show all data", use_container_width=True):
+                    for chart in data:
+                        chart.config.start_index = 0
+
+                    st.session_state[plot_from_index_key] = 0
+
+            with pause_col:
+                paused = st.checkbox("Pause updates", value=False)
+
+            with index_col:
+                st.number_input(
+                    "Start index",
+                    min_value=0,
+                    step=1,
+                    key=plot_from_index_key,
+                )
+
+        plot_from_index = st.session_state[plot_from_index_key]
+
+        for chart in data:
+            chart.config.start_index = plot_from_index
+
+        chart_placeholders: List[DeltaGenerator] = []
+        metric_placeholders: List[DeltaGenerator] = []
+
+        for idx, chart in enumerate(data):
+            chart = cast(ChartData, chart)
+
+            with st.container(border=True):
+                st.subheader(chart.name)
+
+                current_type = (
+                    chart.config.custom_type
+                    if chart.config.custom_type in CHART_TYPES
+                    else "scatter"
+                )
+
+                chart.config.custom_type = st.selectbox(
+                    "Chart type",
+                    CHART_TYPES,
+                    index=CHART_TYPES.index(current_type),
+                    key=f"chart_type_{running_task.name}_{idx}",
+                )
+
+                metric_placeholder = st.empty()
+                chart_placeholder = st.empty()
+
+                metric_placeholders.append(metric_placeholder)
+                chart_placeholders.append(chart_placeholder)
+
+                if paused:
+                    with metric_placeholder:
+                        render_data_metrics(chart)
+
+                    fig = make_plotly_figure(chart)
+                    chart_placeholder.plotly_chart(fig, use_container_width=True)
+
+        update_charts(
+            data=data,
+            paused=paused,
+            chart_placeholders=chart_placeholders,
+            metric_placeholders=metric_placeholders,
+        )
+
 elif not is_task_running:
-    st.info("🚀 Start a task to see real-time data visualization.")
+    st.info("Start a task to display live data.")

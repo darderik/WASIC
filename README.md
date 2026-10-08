@@ -251,6 +251,77 @@ WASIC/
 └── README.md               # This file
 ```
 
+## Extending WASIC
+
+### Registering a new task
+
+1. Create a new Python module in `addons/tasks/`, for example `addons/tasks/my_task.py`.
+2. Define a task function with the signature `def my_task_function(task_obj: Task) -> None:` and use `task_obj.data` and `task_obj.parameters` to produce `ChartData` objects.
+3. Add an initialization function that creates a `Task` instance and adds it to the global task manager:
+
+```python
+from tasks import Task, Tasks
+
+def init_my_task() -> None:
+    my_task = Task(
+        name="My Custom Task",
+        description="Description of my custom task.",
+        instrs_aliases=["MyInstrumentAlias"],
+        function=my_task_function,
+        parameters={
+            "update_interval": "1",
+            "my_parameter": "value",
+        },
+    )
+    Tasks().add_task(my_task)
+```
+
+4. Register the init function in `addons/tasks/__init__.py`:
+
+```python
+from .my_task import init_my_task
+
+# existing imports ...
+
+task_obj.add_init_task(init_my_task)
+```
+
+5. Restart WASIC. The main application imports `addons.tasks` at startup, so the new task will be registered automatically.
+
+### Registering a new instrument
+
+1. Create a new instrument driver file in `addons/instruments/`, for example `addons/instruments/MyInstrument.py`.
+2. Implement a custom instrument class that accepts an adapter and a name, typically by subclassing `pymeasure.instruments.Instrument` or a compatible SCPI mixin:
+
+```python
+from instruments import property_info
+import pymeasure.adapters as pma
+from pymeasure.instruments import Instrument, SCPIMixin
+
+class MyInstrument(SCPIMixin, Instrument):
+    def __init__(self, adapter, name, **kwargs):
+        super().__init__(adapter, name=name)
+        self.init_properties()
+
+    def init_properties(self) -> None:
+        self.properties_list = []
+```
+
+3. Add the new instrument class to `addons/instruments/__init__.py` and register it in `INSTRUMENT_REGISTRY`:
+
+```python
+from .MyInstrument import MyInstrument
+
+INSTRUMENT_REGISTRY = {
+    "MyInstrument": ("MyInstrumentIDN", MyInstrument),
+    # existing entries...
+}
+```
+
+4. Choose an IDN substring for the registry entry that matches the instrument's `*IDN?` response. The string is matched case-insensitively against the connected device IDN.
+5. Optionally add the same alias to `config.json` under `instr_aliases` if you want it included in generic instrument discovery as well.
+6. Restart WASIC. The instrument registry is loaded from `addons/instruments` through `config.Config`, so the custom instrument class will be available during discovery.
+
 ## Troubleshooting
 
 ### Instruments Not Detected

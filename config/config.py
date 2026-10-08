@@ -81,8 +81,9 @@ class Config:
         Returns:
             Optional[str]: The matching alias if found, otherwise None.
         """
-        for alias in self.get("instr_aliases", []):
-            if alias in idn_string:
+        aliases: List[str] = self.get("instr_aliases", [])
+        for alias in aliases:
+            if alias.lower() in idn_string.lower():
                 return alias
         return None
     def add_instrument_extension(self, instr_extension: tuple[str, type]):

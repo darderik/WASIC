@@ -68,6 +68,9 @@ class TBS1052C(Instrument):
         self.init_properties()
         self._local_lock = RLock()
 
+    def ask(self, command: str) -> str:
+        return str(super().ask(command))
+
     # ---------------- Properties panel (optional for your UI) ----------------
     def init_properties(self) -> None:
         self.properties_list: List['property_info'] = [
@@ -95,7 +98,7 @@ class TBS1052C(Instrument):
         """
         Reads a measurement value.
         """
-        curRead: str = self.query(":READ?")
+        curRead: str = self.ask(":READ?")
         return [float(x) for x in curRead.split(",")]
 
     # ---------------- Core / basics ----------------
@@ -125,7 +128,7 @@ class TBS1052C(Instrument):
         # Wait for acquisition to complete (ACQuire:STATE STOP)
         start_time = time.time()
         while True:
-            state = str(self.query("ACQuire:STATE?")).strip().upper()
+            state = str(self.ask("ACQuire:STATE?")).strip().upper()
             if state == "0":
                 return True
             if (time.time() - start_time) > timeout:
@@ -145,7 +148,7 @@ class TBS1052C(Instrument):
         self.write(f"ACQuire:MODe { {'SAMPLE':'SAMple','PEAKDETECT':'PEAKdetect','HIRES':'HIRes','AVERAGE':'AVErage'}[m] }")
 
     def get_acquire_mode(self) -> str:
-        return str(self.query("ACQuire:MODe?")).strip()
+        return str(self.ask("ACQuire:MODe?")).strip()
 
     def set_averages(self, n: int) -> None:
         # Range 2..512 in powers of two
@@ -154,7 +157,7 @@ class TBS1052C(Instrument):
         self.write(f"ACQuire:NUMAVg {n}")
 
     def get_averages(self) -> int:
-        return int(float(self.query("ACQuire:NUMAVg?")))
+        return int(float(self.ask("ACQuire:NUMAVg?")))
 
     # ---------------- Channels ----------------
     def set_channel_enable(self, ch: int, on: bool = True) -> None:
@@ -165,7 +168,7 @@ class TBS1052C(Instrument):
         self.write(f"{self._ch(ch)}:SCAle {vdiv}")
 
     def get_channel_scale(self, ch: int) -> float:
-        return float(self.query(f"{self._ch(ch)}:SCAle?"))
+        return float(self.ask(f"{self._ch(ch)}:SCAle?"))
 
     def set_channel_position(self, ch: int, divisions: float) -> None:
         self.write(f"{self._ch(ch)}:POSition {divisions}")
@@ -211,7 +214,7 @@ class TBS1052C(Instrument):
         self.write(f"HORizontal:MAIn:SCAle {sec_per_div}")
 
     def get_time_scale(self) -> float:
-        return float(self.query("HORizontal:MAIn:SCAle?"))
+        return float(self.ask("HORizontal:MAIn:SCAle?"))
 
     def set_trigger_position_divs(self, divs: float) -> None:
         # Sets position of trigger within record in divisions
@@ -219,19 +222,19 @@ class TBS1052C(Instrument):
 
 
     def get_record_length(self) -> int:
-        return int(float(self.query("HORizontal:RECOrdlength?")))
+        return int(float(self.ask("HORizontal:RECOrdlength?")))
     
     def enable_horizontal_delay(self, on:bool) -> None:
         self.write(f"HORIZONTAL:MAIN:DELAY:STATE {'ON' if on else 'OFF'}")    
     def set_horizontal_delay(self, position:float) -> None:
         self.write(f"HORIZONTAL:MAIN:DELAY:TIME {position}")
     def get_horizontal_delay(self) -> float:
-        return float(self.query("HORIZONTAL:MAIN:DELAY:TIME?"))
+        return float(self.ask("HORIZONTAL:MAIN:DELAY:TIME?"))
 
     def set_horizontal_position(self, position: float) -> None:
         self.write(f"HORizontal:POSition {position}")
     def get_horizontal_position(self) -> float:
-        return float(self.query("HORizontal:POSition?"))
+        return float(self.ask("HORizontal:POSition?"))
     # ---------------- Trigger (Edge, A) ----------------
     def trig_edge(self, source: str = "CH1", slope: str = "RIS", coupling: str = "DC") -> None:
         # Type EDGE
@@ -257,7 +260,7 @@ class TBS1052C(Instrument):
         self.write(f"MEASUrement:IMMed:SOUrce1 {source1}")
         if source2:
             self.write(f"MEASUrement:IMMed:SOUrce2 {source2}")
-        val = float(self.query("MEASUrement:IMMed:VALue?"))
+        val = float(self.ask("MEASUrement:IMMed:VALue?"))
         return [val]
 
     # ---------------- Waveform I/O ----------------
@@ -291,7 +294,7 @@ class TBS1052C(Instrument):
         Restituisce le chiavi legacy: NR_Pt, XINcr, XZEro, YMUlt, YOFf, YZEro,
         PT_Off, XUNit, YUNit + extra (BYT_NR, BIT_NR, ENCDG, BN_FMT, BYT_OR, WFID, PT_Fmt, NR_FRM, TCLK).
         """
-        raw = self.query("WFMOutPre?") or ""
+        raw = self.ask("WFMOutPre?") or ""
         # normalizza e splitta sui ';'
         parts = [p.strip() for p in re.sub(r'[\r\n]+', ' ', raw).lstrip(':').split(';')]
 
@@ -334,7 +337,7 @@ class TBS1052C(Instrument):
             pass  # cadrà nei fallback sotto se qualcosa manca
 
         # Fallback essenziali (solo se non presenti o parse fallito)
-        q = lambda s: (self.query(s) or "").strip()
+        q = lambda s: (self.ask(s) or "").strip()
         if "NR_Pt" not in m or not isinstance(m.get("NR_Pt"), (int, float)):
             try: m["NR_Pt"] = int(float(q("WFMOutpre:NR_Pt?")))
             except: pass
@@ -403,7 +406,7 @@ class TBS1052C(Instrument):
             codes = self.query_binary_values("CURVe?", datatype='B')
             codes = list(codes)  # Convert to list
         else:
-            asc = self.query("CURVe?")
+            asc = self.ask("CURVe?")
             codes = self._parse_curve_ascii(asc)
 
         # Guard against partial transfers

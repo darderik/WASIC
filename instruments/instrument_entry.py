@@ -54,9 +54,9 @@ class Instrument_Entry:
             raise
         return toReturn
 
-    def query_wrapper(self, command) -> str:
+    def ask_wrapper(self, command) -> str:
         # The CLS handling should be implemented in the children classes
         # Refer to test_instrument example
         toReturn: str = ""
-        toReturn = self.scpi_instrument.query(command)
+        toReturn = self.scpi_instrument.ask(command)
         return toReturn

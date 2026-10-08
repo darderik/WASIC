@@ -42,15 +42,10 @@ def init_wasic():
 
 def main():
     script_path=init_wasic()
-    # Begin override code --------- WASIC as library mode -----
-    #tasks = Tasks()
-    #tasks.run_task("R Cube Measurement")
-#    use_as_library()
-
 
     # End override code -----------
     Connections().fetch_all_instruments()
-
+    Tasks().run_task("Thermal tracking")
     streamlit.web.bootstrap.run(script_path, False, [], {})
 
 if __name__ == "__main__":

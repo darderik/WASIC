@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import logging
 import os
@@ -5,7 +6,7 @@ import string
 import time
 from dataclasses import dataclass
 from threading import Lock
-from typing import Any, List, Optional, Tuple
+from typing import Any, Optional
 
 from pymeasure.adapters import SerialAdapter
 from pyvisa.constants import StopBits
@@ -13,32 +14,21 @@ from pyvisa.constants import StopBits
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 0.15
-LOAD_CACHE_TIMEOUT = 0.1
-LOAD_CACHE_MAX_DRAIN_READS = 2
-LOAD_CACHE_MAX_IDN_READS = 2
+CACHE_TIMEOUT = 0.1
+
 HANDSHAKE_TOKENS = {"ok", "ready"}
+
 FAST_BAUDRATES = (9600, 115200, 19200)
 BAUDRATES = (
-    110,
-    300,
-    600,
-    1200,
-    2400,
-    4800,
-    9600,
-    14400,
-    19200,
-    115200,
-    128000,
-    230400,
-    256000,
-    460800,
-    576000,
-    921600,
+    110, 300, 600, 1200, 2400, 4800, 9600, 14400, 19200,
+    115200, 128000, 230400, 256000, 460800, 576000, 921600,
 )
 
 SERIAL_CACHE_FILE = os.path.join(os.path.dirname(__file__), "wasic_serial_cache.tmp")
 BLACKLIST_THRESHOLD = 5
+
+_TRIAL_TIMEOUT_MULTIPLIER = 6
+_TRIAL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
 
 @dataclass(frozen=True)
@@ -48,8 +38,72 @@ class BaudTrialResult:
     idn: str
 
 
+class SerialParamCache:
+    def __init__(self, path: str = SERIAL_CACHE_FILE) -> None:
+        self.path = path
+
+    def read(self) -> dict:
+        try:
+            if not os.path.exists(self.path):
+                return {}
+
+            with open(self.path, "r", encoding="utf-8") as file:
+                return json.load(file) or {}
+        except Exception:
+            return {}
+
+    def write(self, data: dict) -> None:
+        try:
+            tmp_path = self.path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as file:
+                json.dump(data, file)
+
+            os.replace(tmp_path, self.path)
+        except Exception:
+            logger.debug("Failed to write serial cache", exc_info=True)
+
+    def get(self, port: str) -> Optional[dict]:
+        entry = self.read().get(self._key(port))
+        if not entry or entry.get("blacklisted"):
+            return None
+        return entry
+
+    def save_success(self, port: str, baud_rate: int, stop_bits: StopBits) -> None:
+        cache = self.read()
+
+        cache[self._key(port)] = {
+            "baud_rate": int(baud_rate),
+            "stop_bits": stop_bits.name,
+            "ts": int(time.time()),
+        }
+
+        self.write(cache)
+
+    def register_failure(self, port: str) -> int:
+        cache = self.read()
+        key = self._key(port)
+
+        entry = cache.get(key, {})
+        count = int(entry.get("failed_attempts", 0)) + 1
+
+        entry["failed_attempts"] = count
+
+        if count >= BLACKLIST_THRESHOLD:
+            entry["blacklisted"] = True
+            entry["blacklisted_ts"] = int(time.time())
+
+        cache[key] = entry
+        self.write(cache)
+
+        return count
+
+    @staticmethod
+    def _key(port: str) -> str:
+        return str(port).upper()
+
+
 class BaudTrialDetector:
-    """Try serial baud/stop-bit combinations and return the first valid IDN response."""
+    """Rileva baud rate e stop bit interrogando una porta seriale."""
 
     def __init__(
         self,
@@ -59,276 +113,259 @@ class BaudTrialDetector:
         scan_all: bool = False,
         print_all: bool = False,
         clear_on_connect: bool = True,
+        cache: Optional[SerialParamCache] = None,
     ) -> None:
         self.port = str(port)
-        self.query_cmd = _prepare_query_cmd(data)
+        self.query_cmd = prepare_query_cmd(data)
         self.timeout = timeout
         self.scan_all = scan_all
         self.print_all = print_all
         self.clear_on_connect = clear_on_connect
-        self.resource_name = _build_resource_name(port)
+        self.resource_name = build_resource_name(port)
+        self.cache = cache or SerialParamCache()
 
     def detect(self) -> Optional[BaudTrialResult]:
-        cached = load_serial_params(self.port)
+        cached_combo: Optional[tuple[int, StopBits]] = None
+        cached_entry = self.cache.get(self.port)
+
+        if cached_entry is not None:
+            try:
+                cached_combo = (
+                    int(cached_entry["baud_rate"]),
+                    parse_stop_bits(cached_entry["stop_bits"]),
+                )
+            except Exception:
+                cached_combo = None
+
+        cached = self._try_cached_params()
         if cached is not None:
-            baud, stop_bits, idn = cached
-            logger.debug("Using cached serial params for port %s: %s", self.port, cached)
-            return BaudTrialResult(baud_rate=baud, stop_bits=stop_bits, idn=idn)
+            return cached
 
-        for baudrate in (BAUDRATES if self.scan_all else FAST_BAUDRATES):
-            for stopbits in (StopBits.one, StopBits.two):
-                match = self._try_candidate(baudrate, stopbits)
-                if match is not None:
-                    save_serial_params(self.port, baudrate, stopbits)
-                    return BaudTrialResult(baud_rate=baudrate, stop_bits=stopbits, idn=match)
+        for baud_rate in self._baudrates_to_try():
+            for stop_bits in (StopBits.one, StopBits.two):
+                if cached_combo is not None and baud_rate == cached_combo[0] and stop_bits == cached_combo[1]:
+                    continue
 
-        _increment_failure_count(self.port)
+                idn = self._try_candidate(baud_rate, stop_bits)
+
+                if idn is not None:
+                    self.cache.save_success(self.port, baud_rate, stop_bits)
+                    return BaudTrialResult(baud_rate, stop_bits, idn)
+
+        self.cache.register_failure(self.port)
         return None
 
-    def _try_candidate(self, baudrate: int, stopbits: StopBits) -> Optional[str]:
-        adapter: Optional[SerialAdapter] = None
+    def _baudrates_to_try(self) -> tuple[int, ...]:
+        return BAUDRATES if self.scan_all else FAST_BAUDRATES
+
+    def _try_cached_params(self) -> Optional[BaudTrialResult]:
+        entry = self.cache.get(self.port)
+        if entry is None:
+            return None
+
         try:
-            adapter = SerialAdapter(
+            baud_rate = int(entry["baud_rate"])
+            stop_bits = parse_stop_bits(entry["stop_bits"])
+        except Exception:
+            return None
+
+        idn = self._try_candidate(baud_rate, stop_bits)
+        if idn is None:
+            return None
+
+        logger.debug(
+            "Using cached serial params for port %s: baud=%s stop_bits=%s",
+            self.port,
+            baud_rate,
+            stop_bits,
+        )
+
+        return BaudTrialResult(baud_rate, stop_bits, idn)
+
+    def _try_candidate(self, baud_rate: int, stop_bits: StopBits) -> Optional[str]:
+        future = _TRIAL_EXECUTOR.submit(
+            self._try_candidate_worker,
+            baud_rate,
+            stop_bits,
+        )
+
+        timeout = max(0.3, self.timeout * _TRIAL_TIMEOUT_MULTIPLIER)
+
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            self._debug("Timeout at baud=%s stop_bits=%s", baud_rate, stop_bits)
+            return None
+        except Exception:
+            self._debug(
+                "Exception at baud=%s stop_bits=%s",
+                baud_rate,
+                stop_bits,
+                exc_info=True,
+            )
+            return None
+
+    def _try_candidate_worker(self, baud_rate: int, stop_bits: StopBits) -> Optional[str]:
+        adapter: Optional[SerialAdapter] = None
+
+        try:
+            adapter = open_serial_adapter(
                 self.port,
-                baudrate=baudrate,
-                bytesize=8,
-                stopbits=2 if stopbits == StopBits.two else 1,
-                timeout=self.timeout,
-                read_termination="\n",
-                write_termination="\n",
+                baud_rate,
+                stop_bits,
+                self.timeout,
             )
-            logger.debug(
-                "Trying baudrate %s on resource %s with stopbits %s",
-                baudrate,
-                self.resource_name,
-                stopbits,
-            )
+
+            self._debug("Trying baud=%s stop_bits=%s", baud_rate, stop_bits)
+
             if self.clear_on_connect:
-                _safe_clear(adapter, self.resource_name, baudrate, self.print_all)
+                safe_clear(adapter, self.resource_name, baud_rate, self.print_all)
+
             time.sleep(0.01)
 
             adapter.write(self.query_cmd)
+
             for _ in range(4):
                 try:
                     response = adapter.read()
                 except Exception:
                     break
-                # If response is neither handshake nor idn, string is empty, baudrate/Sbits wrong
-                if response == '':
+
+                if response == "":
                     break
-                parsed = _parse_response(response)
+
+                parsed = parse_response(response)
                 if parsed is not None:
                     return parsed
 
             try:
-                fallback = adapter.ask(self.query_cmd)
-                return _parse_response(fallback)
+                return parse_response(adapter.ask(self.query_cmd))
             except Exception:
                 return None
 
-        except Exception as e:
-            if self.print_all:
-                logger.debug(
-                    "Exception for %s at %s (%s): %s",
-                    self.resource_name,
-                    baudrate,
-                    stopbits,
-                    e,
-                )
-            return None
-        finally:
-            try:
-                if adapter is not None:
-                    adapter.close()
-            except Exception:
-                pass
-
-
-def _read_serial_cache() -> dict:
-    try:
-        if not os.path.exists(SERIAL_CACHE_FILE):
-            return {}
-        with open(SERIAL_CACHE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f) or {}
-    except Exception:
-        return {}
-
-
-def _write_serial_cache(data: dict) -> None:
-    try:
-        with open(SERIAL_CACHE_FILE + ".tmp", "w", encoding="utf-8") as f:
-            json.dump(data, f)
-        os.replace(SERIAL_CACHE_FILE + ".tmp", SERIAL_CACHE_FILE)
-    except Exception:
-        pass
-
-
-def _increment_failure_count(port: str) -> int:
-    try:
-        cache = _read_serial_cache()
-        key = str(port).upper()
-        entry = cache.get(key, {})
-        count = int(entry.get("failed_attempts", 0)) + 1
-        entry["failed_attempts"] = count
-        if count >= BLACKLIST_THRESHOLD:
-            entry["blacklisted"] = True
-            entry["blacklisted_ts"] = int(time.time())
-        cache[key] = entry
-        _write_serial_cache(cache)
-        return count
-    except Exception:
-        return 0
-
-
-def _reset_failure_count(port: str) -> None:
-    try:
-        cache = _read_serial_cache()
-        key = str(port).upper()
-        entry = cache.get(key)
-        if not entry:
-            return
-        entry.pop("failed_attempts", None)
-        entry.pop("blacklisted", None)
-        entry.pop("blacklisted_ts", None)
-        cache[key] = entry
-        _write_serial_cache(cache)
-    except Exception:
-        pass
-
-
-def save_serial_params(port: str, baud_rate: int, stop_bits: StopBits) -> None:
-    try:
-        cache = _read_serial_cache()
-        key = str(port).upper()
-        cache[key] = {
-            "baud_rate": int(baud_rate),
-            "stop_bits": stop_bits.name if hasattr(stop_bits, "name") else str(stop_bits),
-            "ts": int(time.time()),
-        }
-        _write_serial_cache(cache)
-        _reset_failure_count(port)
-    except Exception:
-        pass
-
-
-def load_serial_params(port: str) -> Optional[Tuple[int, StopBits, str]]:
-    try:
-        cache = _read_serial_cache()
-        key = str(port).upper()
-        entry = cache.get(key)
-        if not entry or entry.get("blacklisted"):
-            return None
-
-        baud = int(entry.get("baud_rate"))
-        stop_bits_entry = entry.get("stop_bits")
-        if stop_bits_entry is None:
-            return None
-
-        try:
-            stop_bits = StopBits[stop_bits_entry]
         except Exception:
-            try:
-                stop_bits = StopBits(int(stop_bits_entry))
-            except Exception:
-                stop_bits = StopBits.one
-
-        adapter: Optional[SerialAdapter] = None
-        try:
-            adapter = SerialAdapter(
-                str(port),
-                baudrate=baud,
-                bytesize=8,
-                stopbits=2 if stop_bits == StopBits.two else 1,
-                timeout=LOAD_CACHE_TIMEOUT,
-                read_termination="\n",
-                write_termination="\n",
+            self._debug(
+                "Candidate failed at baud=%s stop_bits=%s",
+                baud_rate,
+                stop_bits,
+                exc_info=True,
             )
-            if adapter.connection is not None:
-                previous_timeout = adapter.connection.timeout
-                try:
-                    adapter.connection.timeout = LOAD_CACHE_TIMEOUT
-                    for _ in range(LOAD_CACHE_MAX_DRAIN_READS):
-                        try:
-                            line = adapter.read()
-                        except Exception:
-                            break
-                        line_s = str(line).strip().lower()
-                        if not line_s or line_s in HANDSHAKE_TOKENS:
-                            continue
-                finally:
-                    if adapter.connection is not None:
-                        adapter.connection.timeout = previous_timeout
+            return None
 
-            adapter.write("*IDN?")
-            for _ in range(LOAD_CACHE_MAX_IDN_READS):
-                try:
-                    response = adapter.read()
-                except Exception:
-                    break
-                parsed = _parse_response(response)
-                if parsed is not None:
-                    return (baud, stop_bits, parsed)
-            return None
-        except Exception:
-            return None
         finally:
+            close_quietly(adapter)
+
+    def _debug(self, message: str, *args: Any, **kwargs: Any) -> None:
+        if self.print_all:
+            logger.debug(
+                f"{self.resource_name}: {message}",
+                *args,
+                **kwargs,
+            )
+
+
+def query_idn(
+    port: str,
+    baud_rate: int,
+    stop_bits: StopBits,
+    timeout: float,
+    drain_reads: int = 0,
+    idn_reads: int = 2,
+) -> Optional[str]:
+    adapter: Optional[SerialAdapter] = None
+
+    try:
+        adapter = open_serial_adapter(port, baud_rate, stop_bits, timeout)
+
+        for _ in range(drain_reads):
             try:
-                if adapter is not None:
-                    adapter.close()
+                line = str(adapter.read()).strip().lower()
             except Exception:
-                pass
+                break
+
+            if line and line not in HANDSHAKE_TOKENS:
+                break
+
+        adapter.write("*IDN?")
+
+        for _ in range(idn_reads):
+            try:
+                parsed = parse_response(adapter.read())
+            except Exception:
+                break
+
+            if parsed is not None:
+                return parsed
+
+        return None
+
     except Exception:
         return None
 
-
-def _build_resource_name(port: Any) -> str:
-    port_str = str(port).upper()
-    if port_str.startswith("COM"):
-        digits = "".join(char for char in port_str if char.isdigit())
-        return f"ASRL{digits}::INSTR"
-    return str(port)
+    finally:
+        close_quietly(adapter)
 
 
-def _prepare_query_cmd(data: Any) -> str:
-    if data is None:
-        return "*IDN?"
-    if isinstance(data, bytes):
-        try:
-            return data.decode().strip() or "*IDN?"
-        except Exception:
-            return "*IDN?"
-    return str(data)
+def open_serial_adapter(
+    port: str,
+    baud_rate: int,
+    stop_bits: StopBits,
+    timeout: float,
+) -> SerialAdapter:
+    adapter = SerialAdapter(
+        port,
+        baudrate=baud_rate,
+        bytesize=8,
+        stopbits=2 if stop_bits == StopBits.two else 1,
+        timeout=timeout,
+        read_termination="\n",
+        write_termination="\n",
+    )
+
+    if adapter.connection is not None:
+        adapter.connection.timeout = timeout
+        adapter.connection.write_timeout = timeout
+
+    return adapter
 
 
-def _safe_clear(inst: Any, resource_name: str, baudrate: int, print_all: bool) -> None:
+def safe_clear(adapter: Any, resource_name: str, baud_rate: int, print_all: bool) -> None:
     try:
-        low_level = getattr(inst, "instrument", None) or getattr(inst, "connection", None)
-        if low_level is None:
-            return
+        low_level = getattr(adapter, "instrument", None) or getattr(adapter, "connection", None)
 
-        if hasattr(low_level, "clear"):
+        if low_level is not None and hasattr(low_level, "clear"):
             try:
                 low_level.clear()
             except Exception:
                 pass
 
         try:
-            inst.write("*CLS")
+            adapter.write("*CLS")
         except Exception:
             pass
+
     except Exception as error:
         if print_all:
-            logger.debug("clear/*CLS failed for %s at %s: %s", resource_name, baudrate, error)
+            logger.debug(
+                "clear/*CLS failed for %s at %s: %s",
+                resource_name,
+                baud_rate,
+                error,
+            )
 
 
-def _parse_response(response: Any) -> Optional[str]:
+def parse_response(response: Any) -> Optional[str]:
     response_str = str(response).strip()
+
     if not response_str:
         return None
+
     if response_str.lower() in HANDSHAKE_TOKENS:
         return None
+
     if not validate_response(response_str):
         return None
+
     return "".join(char for char in response_str if char in string.printable)
 
 
@@ -338,9 +375,54 @@ def validate_response(response: str | bytes) -> bool:
             response_str = response.decode(errors="ignore")
         else:
             response_str = str(response)
-        return bool(response_str.strip()) and any(char in string.printable for char in response_str)
+
+        return bool(response_str.strip()) and any(
+            char in string.printable for char in response_str
+        )
+
     except Exception:
         return False
+
+
+def parse_stop_bits(value: Any) -> StopBits:
+    try:
+        return StopBits[value]
+    except Exception:
+        try:
+            return StopBits(int(value))
+        except Exception:
+            return StopBits.one
+
+
+def build_resource_name(port: Any) -> str:
+    port_str = str(port).upper()
+
+    if port_str.startswith("COM"):
+        digits = "".join(char for char in port_str if char.isdigit())
+        return f"ASRL{digits}::INSTR"
+
+    return str(port)
+
+
+def prepare_query_cmd(data: Any) -> str:
+    if data is None:
+        return "*IDN?"
+
+    if isinstance(data, bytes):
+        try:
+            return data.decode().strip() or "*IDN?"
+        except Exception:
+            return "*IDN?"
+
+    return str(data).strip() or "*IDN?"
+
+
+def close_quietly(adapter: Optional[Any]) -> None:
+    try:
+        if adapter is not None:
+            adapter.close()
+    except Exception:
+        pass
 
 
 def detect_baud_rate(
@@ -350,7 +432,7 @@ def detect_baud_rate(
     scan_all: bool = False,
     print_all: bool = False,
     clear_on_connect: bool = True,
-) -> Optional[Tuple[int, str]]:
+) -> Optional[tuple[int, str]]:
     detector = BaudTrialDetector(
         port=port,
         data=data,
@@ -359,28 +441,35 @@ def detect_baud_rate(
         print_all=print_all,
         clear_on_connect=clear_on_connect,
     )
+
     result = detector.detect()
+
     if result is None:
         return None
-    return (result.baud_rate, result.idn)
+
+    return result.baud_rate, result.idn
 
 
 def detect_baud_wrapper(
     port: Any,
-    target: List[Tuple[str, str, int]],
+    target: list[tuple[str, str, int]],
     target_lock: Lock,
 ) -> None:
-    baud_and_idn = detect_baud_rate(port=port)
-    if baud_and_idn is None:
+    result = detect_baud_rate(port=port)
+
+    if result is None:
         logger.debug("Failed to detect baud rate for port %s", port)
         return
 
-    result = (str(port), baud_and_idn[1], baud_and_idn[0])
+    baud_rate, idn = result
+    row = (str(port), idn, baud_rate)
+
     logger.debug(
         "BR Detection on port %s with Baud %s and IDN %s",
-        result[0],
-        result[2],
-        result[1],
+        row[0],
+        row[2],
+        row[1],
     )
+
     with target_lock:
-        target.append(result)
+        target.append(row)

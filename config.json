@@ -1,6 +1,7 @@
 {
     "instr_aliases": [
-        "RPB"
+        "RPB",
+        "Model 2000"
     ],
     "instrument_connections_datapath": "data/instr/instruments.json",
     "data_charts_path": "data/charts",

@@ -20,14 +20,14 @@ class RPIB(SCPIMixin, Instrument):
 
 		self.init_properties()
 
-	def query(self, command: str) -> str:
-		return str(self.ask(command)).strip()
+	def ask(self, command: str) -> str:
+		return str(super().ask(command)).strip()
 
 	def opc(self) -> bool:
-		return self.query("*OPC?") == "1"
+		return str(self.ask("*OPC?")).strip() == "1"
 
 	def idn(self) -> str:
-		return self.query("*IDN?")
+		return str(self.ask("*IDN?"))
 
 	def init_properties(self) -> None:
 		self.properties_list: List[property_info] = [
@@ -47,13 +47,13 @@ class RPIB(SCPIMixin, Instrument):
 		self.write("*CLS")
 
 	def get_system_error(self) -> str:
-		return self.query("SYST:ERR?")
+		return self.ask("SYST:ERR?")
 
 	def get_system_version(self) -> str:
-		return self.query("SYST:VERS?")
+		return self.ask("SYST:VERS?")
 
 	def get_operation_status(self) -> int:
-		return int(float(self.query("STAT:OPER?")))
+		return int(float(self.ask("STAT:OPER?")))
 
 	def configure_voltage_dc(self, voltage_range: float) -> None:
 		self.write(f"CONF:VOLT:DC {float(voltage_range)}")
@@ -62,7 +62,7 @@ class RPIB(SCPIMixin, Instrument):
 		self.write(f"VOLT:DC:RANG {float(voltage_range)}")
 
 	def get_voltage_range(self) -> float:
-		return float(self.query("VOLT:DC:RANG?"))
+		return float(self.ask("VOLT:DC:RANG?"))
 
 	@property
 	def voltage_range(self) -> float:
@@ -76,7 +76,7 @@ class RPIB(SCPIMixin, Instrument):
 		self.write(f"VOLT:DC:NPLC {float(nplc)}")
 
 	def get_nplc(self) -> float:
-		return float(self.query("VOLT:DC:NPLC?"))
+		return float(self.ask("VOLT:DC:NPLC?"))
 
 	@property
 	def nplc(self) -> float:
@@ -90,7 +90,7 @@ class RPIB(SCPIMixin, Instrument):
 		self.write(f"VOLT:DC:OFFS {float(offset)}")
 
 	def get_offset(self) -> float:
-		return float(self.query("VOLT:DC:OFFS?"))
+		return float(self.ask("VOLT:DC:OFFS?"))
 
 	@property
 	def offset(self) -> float:
@@ -101,19 +101,19 @@ class RPIB(SCPIMixin, Instrument):
 		self.set_offset(value)
 
 	def measure_voltage_dc(self) -> float:
-		return float(self.query("MEAS:VOLT:DC?"))
+		return float(self.ask("MEAS:VOLT:DC?"))
 
 	def read_measurement(self) -> float:
-		return float(self.query("READ?"))
+		return float(self.ask("READ?"))
 
 	def fetch(self) -> float:
-		return float(self.query("FETCh?"))
+		return float(self.ask("FETCh?"))
 
 	def set_sample_count(self, count: int) -> None:
 		self.write(f"SAMP:COUN {int(count)}")
 
 	def get_sample_count(self) -> int:
-		return int(float(self.query("SAMP:COUN?")))
+		return int(float(self.ask("SAMP:COUN?")))
 
 	@property
 	def sample_count(self) -> int:

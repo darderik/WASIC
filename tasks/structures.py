@@ -61,6 +61,7 @@ class ChartData_Config:
     sample_points_y: int = field(default=0, metadata={"help": "Max Y points to keep (0=unlimited)."})
     refresh_all: bool = field(default=False, metadata={"help": "If True, request full UI refresh when this chart updates."})
     custom_type: str = field(default="", metadata={"help": "Chart type or category."})
+    start_index: int = field(default=0, metadata={"help": "Start rendering from this processed sample index."})
     schema_version: int = field(default=1, metadata={"help": "Config schema version."})
 
 
@@ -138,6 +139,7 @@ class ChartData:
                 "sample_points_y": self.config.sample_points_y,
                 "refresh_all": getattr(self.config, "refresh_all", False),
                 "custom_type": self.config.custom_type,
+                "start_index": getattr(self.config, "start_index", 0),
             },
             "x": {
                 "processed": list(self.x_series.processed),
@@ -170,6 +172,7 @@ class ChartData:
             sample_points_y=cfg.get("sample_points_y", 0),
             refresh_all=cfg.get("refresh_all", False) if isinstance(cfg, dict) else False,
             custom_type=cfg.get("custom_type", ""),
+            start_index=cfg.get("start_index", 0) if isinstance(cfg, dict) else 0,
         )
 
         x = data.get("x", {})
@@ -261,3 +264,42 @@ class ChartData:
         elif switch == 2:
             return min(len(self.x_series.processed), len(self.y_series.processed))
         return 0
+    
+    def add_raw_x(self, value: Any) -> None:
+        """Add a raw sample to the X series."""
+        self.x_series.raw.append(value)
+    def add_raw_y(self, value: Any) -> None:
+        """Add a raw sample to the Y series."""
+        self.y_series.raw.append(value)
+    def add_processed_x(self, value: float) -> None:
+        """Add a processed sample to the X series."""
+        self.x_series.processed.append(value)
+    def add_processed_y(self, value: float) -> None:
+        """Add a processed sample to the Y series."""
+        self.y_series.processed.append(value)
+    def add_raw_pair(self, x_value: Any, y_value: Any) -> None:
+        """Add a pair of raw samples to the X and Y series."""
+        self.add_raw_x(x_value)
+        self.add_raw_y(y_value)
+    def add_processed_pair(self, x_value: float, y_value: float) -> None:
+        """Add a pair of processed samples to the X and Y series."""
+        self.add_processed_x(x_value)
+        self.add_processed_y(y_value)
+    def set_math_formula_x(self, formula: Callable[[Any], float]) -> None:
+        """Set the math formula for the X series."""
+        self.math_formula_x = formula
+    def set_math_formula_y(self, formula: Callable[[Any], float]) -> None:
+        """Set the math formula for the Y series."""
+        self.math_formula_y = formula
+
+    def configure_x_axis(self, label: str, unit: str, scale: str = "linear") -> None:
+        """Configure the X axis metadata."""
+        self.x_series.meta.label = label
+        self.x_series.meta.unit = unit
+        self.x_series.meta.scale = scale
+
+    def configure_y_axis(self, label: str, unit: str, scale: str = "linear") -> None:
+        """Configure the Y axis metadata."""
+        self.y_series.meta.label = label
+        self.y_series.meta.unit = unit
+        self.y_series.meta.scale = scale

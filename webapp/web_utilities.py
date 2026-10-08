@@ -71,6 +71,11 @@ def make_plotly_figure(chart_data: ChartData):
     elif x_list:
         x_list = [x for x in x_list if pd.notna(x)]
 
+    start_index = max(0, int(getattr(chart_data_config, "start_index", 0) or 0))
+    if start_index > 0:
+        x_list = x_list[start_index:] if x_list else []
+        y_list = y_list[start_index:] if y_list else []
+
     if custom_type in ("histogram", "hist"):
         # Histogram: prioritize y, then x if y is empty
         if y_list:

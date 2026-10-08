@@ -48,7 +48,7 @@ def verify_instruments(mode: int = 0, clear_list: bool = True):
 def send_command(instr_selected: Instrument_Entry, command: str, uid: str) -> None:
     try:
         if "?" in command:  # This is a query, expect a response
-            result: str = instr_selected.query_wrapper(command)
+            result: str = instr_selected.ask_wrapper(command)
             st.session_state[
                 f"{uid}_buffer_output"
             ] += f"{instr_selected.data.alias}: {command} --> {result}\n"

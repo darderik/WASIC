@@ -49,8 +49,8 @@ class RelayMatrix(SCPIMixin, Instrument):
 
         self.init_properties()
 
-    def query(self, command: str) -> str:
-        return str(self.ask(command))
+    def ask(self, command: str) -> str:
+        return str(super().ask(command))
 
     def opc(self) -> bool:
         return str(self.ask("*OPC?")).strip() == "1"
@@ -116,7 +116,7 @@ class RelayMatrix(SCPIMixin, Instrument):
         str
             The system log.
         """
-        raw_msg: str = self.query("sys:log?")
+        raw_msg: str = self.ask("sys:log?")
         return raw_msg.replace("\\|", "\n")
 
     def get_system_state(self) -> str:
@@ -128,7 +128,7 @@ class RelayMatrix(SCPIMixin, Instrument):
         str
             The system state.
         """
-        return self.query("sys:getstate?")
+        return self.ask("sys:getstate?")
 
     def halt_system(self) -> None:
         """

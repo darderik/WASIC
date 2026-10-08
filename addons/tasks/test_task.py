@@ -93,7 +93,7 @@ def test_task_function(task_obj: Task) -> None:
     histogram_std = float(task_obj.parameters.get("histogram_std", "15"))
     merge_chart_files = str_to_bool(task_obj.parameters.get("merge_chart_files", "True"))
 
-
+    
     # Add all charts to data
     data.extend([scatter_chart, line_chart, histogram_chart, formula_chart])
     

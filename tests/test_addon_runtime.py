@@ -43,13 +43,13 @@ class AddonRuntimeTests(unittest.TestCase):
     def test_bootstrap_is_complete_and_idempotent(self):
         from addons.loader import load_addons
         self.assertFalse(self.registry.errors)
-        self.assertEqual(set(self.registry.tasks), {"thermal_tracking", "test_charts"})
-        self.assertEqual(len(self.registry.instruments), 4)
+        self.assertEqual(set(self.registry.tasks), {"thermal_tracking", "test_charts", "van_der_pauw"})
+        self.assertEqual(len(self.registry.instruments), 6)
         self.tasks.load_specs(self.registry.tasks.values())
         task = self.tasks.get_task("Test Charts")
         task.parameters["update_interval"] = 0.02
         load_addons()
-        self.assertEqual(len(self.tasks._tasks_list), 2)
+        self.assertEqual(len(self.tasks._tasks_list), 3)
         self.assertIs(self.tasks.get_task("Test Charts"), task)
         self.assertEqual(task.parameters["update_interval"], 0.02)
 

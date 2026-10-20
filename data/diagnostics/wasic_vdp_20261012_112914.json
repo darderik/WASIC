@@ -1,0 +1,39 @@
+{
+  "error": null,
+  "parameters": {
+    "repetitions": 3,
+    "current_A": 0.0001,
+    "compliance_V": 1.0,
+    "nplc": 5.0,
+    "samples_per_polarity": 1,
+    "overrange_retries": 3,
+    "overrange_retry_delay_s": 0.5,
+    "current_settle_s": 0.3,
+    "relay_settle_s": 0.2,
+    "repeat_delay_s": 0.0,
+    "voltage_range_V": 0.0,
+    "current_hi_group": "c",
+    "current_lo_group": "d",
+    "voltage_hi_group": "a",
+    "voltage_lo_group": "b",
+    "contact_1": 1,
+    "contact_2": 2,
+    "contact_3": 3,
+    "contact_4": 4,
+    "merge_chart_files": true
+  },
+  "route_states": {
+    "RA": {
+      "system": "STATE:IDLE",
+      "bytes": "0001,0010,1000,0100",
+      "power": "TPL9201: OK Power RST 1",
+      "log": "---COMMAND DIAGNOSTIC--- \nCommand: *idn? Status: 0, Interpreter Status: OK \nMessage: DIIEM,Relay Matrix,0069004C3433511133393"
+    },
+    "RB": {
+      "system": "STATE:IDLE",
+      "bytes": "1000,0001,0100,0010",
+      "power": "TPL9201: OK Power RST 1",
+      "log": "---COMMAND DIAGNOSTIC--- \nCommand: switch:commute:reset:all Status: 0, Interpreter Status: OK \nMessage: TPL9201: OK Power RST"
+    }
+  }
+}

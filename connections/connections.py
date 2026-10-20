@@ -10,17 +10,20 @@ from typing import Any, Optional, cast
 
 import pymeasure.adapters as pma
 import pymeasure.instruments as pmi
+import pyvisa
+from pyvisa.constants import ControlFlow, StopBits
 from pymeasure.instruments.instrument import Instrument
 from serial.tools.list_ports import comports
 
 from config import Config
 from addons.loader import registry
 from instruments import Instrument_Entry, SCPI_Info
-from .baud_detector import BaudTrialDetector
+from .baud_detector import BaudTrialDetector, SerialParamCache, parse_response, parse_stop_bits
 
 logger = logging.getLogger(__name__)
 
 MULTITHREAD_DETECTION = True
+SerialDetection = tuple[str, str, int, str, str, str, str]
 
 
 class Connections:
@@ -128,7 +131,12 @@ class Connections:
                     if self.is_scpi_info_busy(info):
                         continue
 
-                    self._add_instrument(info)
+                    if not self._add_instrument(info) and "ASRL" in info.resource_str.upper():
+                        detection = self._detect_serial_port(info.port)
+                        if detection is not None:
+                            refreshed = self._build_serial_info(*detection)
+                            if refreshed is not None:
+                                self._add_instrument(refreshed)
 
             except FileNotFoundError:
                 logger.warning(
@@ -154,7 +162,11 @@ class Connections:
 
     def _discover_visa_instruments(self, locked_ports: list[str]) -> None:
         try:
-            resources = pmi.list_resources()
+            # Enumerate only: PyMeasure's helper queries every port and closes
+            # the ResourceManager shared with our live VISA adapters.
+            manager = pyvisa.ResourceManager(self.backend)
+            self._visa_manager = manager
+            resources = manager.list_resources()
             logger.debug("VISA instruments found: %s", resources)
 
             for resource in resources:
@@ -169,18 +181,18 @@ class Connections:
     def _discover_serial_instruments(self, ports: list[str]) -> None:
         detections = self._detect_serial_ports(ports)
 
-        for port, idn, baud_rate in detections:
-            info = self._build_serial_info(port, idn, baud_rate)
+        for detection in detections:
+            info = self._build_serial_info(*detection)
 
             if info is not None:
                 logger.debug("Found serial instrument: %s -> %s", info.alias, info)
                 self._add_instrument(info)
 
-    def _detect_serial_ports(self, ports: list[str]) -> list[tuple[str, str, int]]:
+    def _detect_serial_ports(self, ports: list[str]) -> list[SerialDetection]:
         if MULTITHREAD_DETECTION:
             return self._detect_serial_ports_parallel(ports)
 
-        detections: list[tuple[str, str, int]] = []
+        detections: list[SerialDetection] = []
 
         for port in ports:
             detection = self._detect_serial_port(port)
@@ -194,8 +206,8 @@ class Connections:
     def _detect_serial_ports_parallel(
         self,
         ports: list[str],
-    ) -> list[tuple[str, str, int]]:
-        detections: list[tuple[str, str, int]] = []
+    ) -> list[SerialDetection]:
+        detections: list[SerialDetection] = []
         detections_lock = Lock()
         threads: list[Thread] = []
 
@@ -216,7 +228,7 @@ class Connections:
     def _detect_serial_port_worker(
         self,
         port: str,
-        target: list[tuple[str, str, int]],
+        target: list[SerialDetection],
         target_lock: Lock,
     ) -> None:
         detection = self._detect_serial_port(port)
@@ -228,21 +240,27 @@ class Connections:
             target.append(detection)
 
     @staticmethod
-    def _detect_serial_port(port: str) -> Optional[tuple[str, str, int]]:
-        result = BaudTrialDetector(port=port).detect()
+    def _detect_serial_port(port: str) -> Optional[SerialDetection]:
+        # Probe unknown devices with IDN only: a preceding *CLS may require
+        # its own handshake, which cannot be assumed for every instrument.
+        result = BaudTrialDetector(port=port, clear_on_connect=False).detect()
 
         if result is None:
             logger.debug("Failed to detect baud rate for port %s", port)
             return None
 
         logger.debug(
-            "Baud detection on port %s: baud=%s idn=%s",
+            "Serial detection on port %s: baud=%s idn=%s read=%r write=%r flow=%s",
             port,
             result.baud_rate,
             result.idn,
+            result.read_termination,
+            result.write_termination,
+            result.flow_control,
         )
 
-        return port, result.idn, result.baud_rate
+        return (port, result.idn, result.baud_rate, result.stop_bits.name,
+                result.read_termination, result.write_termination, result.flow_control)
 
     # ---------------------------------------------------------------------
     # Resource processing
@@ -254,12 +272,17 @@ class Connections:
         try:
             instrument = Instrument(
                 adapter=resource,
-                backend=self.backend,
+                visa_library=self.backend,
                 name=resource,
             )
 
             idn = instrument.ask("*IDN?")
             info = self._build_visa_info(resource, idn)
+
+            # USB devices may only allow one open session at a time. Release
+            # the discovery connection before the driver opens its own.
+            instrument.adapter.close()
+            instrument = None
 
             if info is not None:
                 logger.debug("Found VISA instrument: %s -> %s", info.alias, info)
@@ -293,6 +316,10 @@ class Connections:
         port: str,
         idn: str,
         baud_rate: int,
+        stop_bits: str = "one",
+        read_termination: str = "\n",
+        write_termination: str = "\n",
+        flow_control: str = "none",
     ) -> Optional[SCPI_Info]:
         spec = registry.match_instrument(idn)
         alias = spec.name if spec else self._config.is_in_instr_aliases(idn)
@@ -303,21 +330,38 @@ class Connections:
         return SCPI_Info(
             port=port,
             baud_rate=baud_rate,
+            stop_bits=stop_bits,
+            read_termination=read_termination,
+            write_termination=write_termination,
+            flow_control=flow_control,
             idn=idn,
             alias=alias,
             resource_str=self._serial_resource_name(port),
             name=self._name_from_idn(idn),
         )
 
-    def _add_instrument(self, info: SCPI_Info) -> None:
+    def _add_instrument(self, info: SCPI_Info) -> bool:
         entry = self._create_instrument_entry(info)
 
         if entry is None:
             logger.error("Failed to create Instrument_Entry for %s", info.idn)
-            return
+            return False
+
+        if not self._is_instrument_alive(entry):
+            self._disconnect_entry(entry)
+            if "ASRL" in info.resource_str.upper():
+                SerialParamCache().forget(info.port)
+            logger.warning("Instrument %s did not pass connection verification", info.idn)
+            return False
 
         self.instruments_list.append(entry)
+        if "ASRL" in info.resource_str.upper():
+            SerialParamCache().save_success(info.port, info.baud_rate,
+                                           parse_stop_bits(info.stop_bits),
+                                           info.read_termination, info.write_termination,
+                                           info.flow_control)
         logger.info("Successfully added instrument: %s", info.idn)
+        return True
 
     # ---------------------------------------------------------------------
     # Instrument creation
@@ -381,11 +425,26 @@ class Connections:
 
     def _create_visa_adapter(self, info: SCPI_Info) -> pma.VISAAdapter:
         backend = info.backend or self.backend
+        # New serial sessions already use 8N1 and no flow control. Avoid
+        # redundant port reconfiguration, which can reset USB CDC firmware.
+        serial_options: dict[str, Any] = {
+            "baud_rate": info.baud_rate,
+            "read_termination": info.read_termination,
+            "write_termination": info.write_termination,
+        }
+        stop_bits = parse_stop_bits(info.stop_bits)
+        if stop_bits != StopBits.one:
+            serial_options["stop_bits"] = stop_bits
+        flow_control = ControlFlow[info.flow_control]
+        if flow_control != ControlFlow.none:
+            serial_options["flow_control"] = flow_control
 
         return pma.VISAAdapter(
             resource_name=info.resource_str,
             visa_library=backend,
-            asrl={"baud_rate": info.baud_rate},
+            # VISA timeouts are in milliseconds; allow high-NPLC acquisitions.
+            timeout=30000,
+            asrl=serial_options,
         )
 
     # ---------------------------------------------------------------------
@@ -410,7 +469,7 @@ class Connections:
         try:
             instrument.adapter.connection.close()
         except Exception:
-            instrument.close()
+            instrument.adapter.close()
 
     @staticmethod
     def _safe_close(instrument: Optional[Instrument]) -> None:
@@ -418,15 +477,15 @@ class Connections:
             return
 
         try:
-            instrument.close()
+            instrument.adapter.close()
         except Exception:
             pass
 
     @staticmethod
     def _is_instrument_alive(entry: Instrument_Entry) -> bool:
         try:
-            entry.scpi_instrument.ask("*IDN?")
-            return True
+            response = parse_response(entry.scpi_instrument.ask("*IDN?"))
+            return response is not None and response == parse_response(entry.data.idn)
         except Exception as exc:
             logger.warning("Failed to verify instrument %s: %s", entry.data.idn, exc)
             return False
@@ -435,7 +494,8 @@ class Connections:
         locked_ports: list[str] = []
 
         for instrument in self.instruments_list:
-            resource = instrument.scpi_instrument
+            locked_ports.extend([instrument.data.port, instrument.data.resource_str])
+            resource = instrument.scpi_instrument.adapter
 
             if isinstance(resource, pma.SerialAdapter):
                 locked_ports.append(str(resource.connection.port))

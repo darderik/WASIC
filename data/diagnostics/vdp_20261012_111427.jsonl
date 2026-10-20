@@ -1,0 +1,7 @@
+{"port": "COM6", "identity": "KEITHLEY INSTRUMENTS INC.,MODEL 6221,4409721,E02  /700x ", "timeout_ms": 30000, "time": "2026-10-12 11:14:27"}
+{"port": "COM5", "identity": "KEITHLEY INSTRUMENTS INC.,MODEL 2182A,4408486,C06  /A02  ", "timeout_ms": 30000, "time": "2026-10-12 11:14:27"}
+{"port": "COM4", "identity": "DIIEM,Relay Matrix,0069004C3433511133393338,V1.0", "timeout_ms": 30000, "time": "2026-10-12 11:14:27"}
+{"stage": "initial", "meter": {"auto": "1", "range": "1.000000", "nplc": "5.00", "error": "0,\"No error\""}, "time": "2026-10-12 11:14:27"}
+{"stage": "configured", "meter": {"auto": "1", "range": "100.000000", "nplc": "5.00", "error": "0,\"No error\""}, "time": "2026-10-12 11:14:28"}
+{"stage": "baseline", "meter": {"auto": "1", "range": "100.000000", "nplc": "5.00", "error": "0,\"No error\""}, "time": "2026-10-12 11:14:28"}
+{"event": "cleanup", "source_off": true, "relays_open": true, "time": "2026-10-12 11:14:30"}

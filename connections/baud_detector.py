@@ -17,6 +17,7 @@ DEFAULT_TIMEOUT = 0.15
 CACHE_TIMEOUT = 0.1
 
 HANDSHAKE_TOKENS = {"ok", "ready"}
+TERMINATORS = ("\r\n", "\n\r", "\r", "\n")
 
 FAST_BAUDRATES = (9600, 115200, 19200)
 BAUDRATES = (
@@ -36,9 +37,14 @@ class BaudTrialResult:
     baud_rate: int
     stop_bits: StopBits
     idn: str
+    read_termination: str = "\n"
+    write_termination: str = "\n"
+    flow_control: str = "none"
 
 
 class SerialParamCache:
+    _lock = Lock()
+
     def __init__(self, path: str = SERIAL_CACHE_FILE) -> None:
         self.path = path
 
@@ -68,18 +74,30 @@ class SerialParamCache:
             return None
         return entry
 
-    def save_success(self, port: str, baud_rate: int, stop_bits: StopBits) -> None:
-        cache = self.read()
+    def save_success(self, port: str, baud_rate: int, stop_bits: StopBits,
+                     read_termination: str = "\n", write_termination: str = "\n",
+                     flow_control: str = "none") -> None:
+        with self._lock:
+            cache = self.read()
+            cache[self._key(port)] = {
+                "baud_rate": int(baud_rate), "stop_bits": stop_bits.name,
+                "read_termination": read_termination,
+                "write_termination": write_termination,
+                "flow_control": flow_control, "ts": int(time.time()),
+            }
+            self.write(cache)
 
-        cache[self._key(port)] = {
-            "baud_rate": int(baud_rate),
-            "stop_bits": stop_bits.name,
-            "ts": int(time.time()),
-        }
-
-        self.write(cache)
+    def forget(self, port: str) -> None:
+        with self._lock:
+            cache = self.read()
+            cache.pop(self._key(port), None)
+            self.write(cache)
 
     def register_failure(self, port: str) -> int:
+        with self._lock:
+            return self._register_failure(port)
+
+    def _register_failure(self, port: str) -> int:
         cache = self.read()
         key = self._key(port)
 
@@ -146,11 +164,11 @@ class BaudTrialDetector:
                 if cached_combo is not None and baud_rate == cached_combo[0] and stop_bits == cached_combo[1]:
                     continue
 
-                idn = self._try_candidate(baud_rate, stop_bits)
+                result = self._try_candidate(baud_rate, stop_bits)
 
-                if idn is not None:
-                    self.cache.save_success(self.port, baud_rate, stop_bits)
-                    return BaudTrialResult(baud_rate, stop_bits, idn)
+                if result is not None:
+                    self._remember(result)
+                    return result
 
         self.cache.register_failure(self.port)
         return None
@@ -169,8 +187,8 @@ class BaudTrialDetector:
         except Exception:
             return None
 
-        idn = self._try_candidate(baud_rate, stop_bits)
-        if idn is None:
+        result = self._try_candidate(baud_rate, stop_bits)
+        if result is None:
             return None
 
         logger.debug(
@@ -180,9 +198,15 @@ class BaudTrialDetector:
             stop_bits,
         )
 
-        return BaudTrialResult(baud_rate, stop_bits, idn)
+        self._remember(result)
+        return result
 
-    def _try_candidate(self, baud_rate: int, stop_bits: StopBits) -> Optional[str]:
+    def _remember(self, result: BaudTrialResult) -> None:
+        self.cache.save_success(self.port, result.baud_rate, result.stop_bits,
+                                result.read_termination, result.write_termination,
+                                result.flow_control)
+
+    def _try_candidate(self, baud_rate: int, stop_bits: StopBits) -> Optional[BaudTrialResult]:
         future = _TRIAL_EXECUTOR.submit(
             self._try_candidate_worker,
             baud_rate,
@@ -205,7 +229,7 @@ class BaudTrialDetector:
             )
             return None
 
-    def _try_candidate_worker(self, baud_rate: int, stop_bits: StopBits) -> Optional[str]:
+    def _try_candidate_worker(self, baud_rate: int, stop_bits: StopBits) -> Optional[BaudTrialResult]:
         adapter: Optional[SerialAdapter] = None
 
         try:
@@ -218,30 +242,44 @@ class BaudTrialDetector:
 
             self._debug("Trying baud=%s stop_bits=%s", baud_rate, stop_bits)
 
-            if self.clear_on_connect:
-                safe_clear(adapter, self.resource_name, baud_rate, self.print_all)
-
-            time.sleep(0.01)
-
-            adapter.write(self.query_cmd)
-
-            for _ in range(4):
-                try:
-                    response = adapter.read()
-                except Exception:
-                    break
-
-                if response == "":
-                    break
-
-                parsed = parse_response(response)
-                if parsed is not None:
-                    return parsed
-
-            try:
-                return parse_response(adapter.ask(self.query_cmd))
-            except Exception:
-                return None
+            entry = self.cache.get(self.port) or {}
+            preferred = entry.get("write_termination", "\n")
+            if preferred not in TERMINATORS:
+                preferred = "\n"
+            # Retry CR only when LF produced no identification. No Cartesian
+            # scan of response terminators or flow-control settings is needed.
+            for write_termination in dict.fromkeys((preferred, "\n", "\r")):
+                adapter.write_termination = write_termination
+                if self.clear_on_connect:
+                    safe_clear(adapter, self.resource_name, baud_rate, self.print_all)
+                time.sleep(0.01)
+                adapter.write(self.query_cmd)
+                flow_control = "none"
+                for _ in range(4):
+                    response = read_probe_line(adapter, self.timeout)
+                    if not response:
+                        break
+                    if b"\x11" in response or b"\x13" in response:
+                        flow_control = "xon_xoff"
+                    parsed = parse_response(response)
+                    if parsed is not None:
+                        if self.query_cmd.upper() == "*IDN?" and parsed.count(",") < 2:
+                            continue
+                        clean = response.replace(b"\x11", b"").replace(b"\x13", b"")
+                        terminator = next((term for term in TERMINATORS
+                                           if clean.endswith(term.encode())), None)
+                        # An unterminated partial response cannot establish
+                        # reliable read settings for the definitive driver.
+                        if terminator is not None:
+                            # Some devices send IDN followed by a final OK.
+                            # Consume that tail before closing the probe port;
+                            # read_probe_line may already hold its first byte.
+                            tail = read_probe_line(adapter, self.timeout)
+                            if b"\x11" in tail or b"\x13" in tail:
+                                flow_control = "xon_xoff"
+                            return BaudTrialResult(baud_rate, stop_bits, parsed,
+                                                   terminator, write_termination, flow_control)
+            return None
 
         except Exception:
             self._debug(
@@ -354,8 +392,47 @@ def safe_clear(adapter: Any, resource_name: str, baud_rate: int, print_all: bool
             )
 
 
+def read_probe_line(adapter: SerialAdapter, timeout: float) -> bytes:
+    """Preserve framing and XON/XOFF bytes, accepting CR and LF equally.
+
+    A short lookahead distinguishes paired terminators without waiting for the
+    full serial timeout after a complete line.
+    """
+    connection = adapter.connection
+    deadline = time.monotonic() + timeout
+    data = bytearray()
+    while len(data) < 4096:
+        if time.monotonic() >= deadline:
+            break
+        char = getattr(adapter, "_probe_pending", b"")
+        if char:
+            adapter._probe_pending = b""
+        else:
+            char = connection.read(1)
+        if not char:
+            break
+        data.extend(char)
+        if char in (b"\r", b"\n"):
+            if not connection.in_waiting:
+                time.sleep(min(timeout, 0.02))
+            following = connection.read(1) if connection.in_waiting else b""
+            # Preserve the first byte when the next response is already queued.
+            while following in (b"\x11", b"\x13"):
+                data.extend(following)
+                following = connection.read(1) if connection.in_waiting else b""
+            if following and following != char and following in (b"\r", b"\n"):
+                data.extend(following)
+            elif following:
+                adapter._probe_pending = following
+            break
+    logger.debug("Serial probe %s READ:%r", getattr(connection, "port", ""), bytes(data))
+    return bytes(data)
+
+
 def parse_response(response: Any) -> Optional[str]:
-    response_str = str(response).strip()
+    if isinstance(response, bytes):
+        response = response.decode("ascii", errors="ignore")
+    response_str = str(response).replace("\x11", "").replace("\x13", "").strip()
 
     if not response_str:
         return None

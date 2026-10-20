@@ -1,0 +1,203 @@
+{
+  "error": null,
+  "parameters": {
+    "repetitions": 3,
+    "current_A": 0.0001,
+    "compliance_V": 1.0,
+    "nplc": 5.0,
+    "samples_per_polarity": 1,
+    "overrange_retries": 3,
+    "overrange_retry_delay_s": 0.5,
+    "current_settle_s": 0.3,
+    "relay_settle_s": 0.2,
+    "repeat_delay_s": 0.0,
+    "voltage_range_V": 0.0,
+    "current_hi_group": "c",
+    "current_lo_group": "d",
+    "voltage_hi_group": "a",
+    "voltage_lo_group": "b",
+    "contact_1": 1,
+    "contact_2": 2,
+    "contact_3": 3,
+    "contact_4": 4,
+    "merge_chart_files": true
+  },
+  "elapsed_s": 6.537483099964447,
+  "cancelled": false,
+  "final_state": {
+    "source_output": "0",
+    "source_current": "0.00000E+00",
+    "source_compliance": "1.000000E+00",
+    "source_error": [],
+    "meter_auto": "1",
+    "meter_range": "100.000000",
+    "meter_error": []
+  },
+  "charts": [
+    {
+      "schema_version": 1,
+      "name": "Van der Pauw - RA",
+      "created_at": "2026-10-12T11:26:55.493475",
+      "config": {
+        "pop_raw": false,
+        "sample_points_x": 0,
+        "sample_points_y": 0,
+        "refresh_all": false,
+        "custom_type": "histogram",
+        "start_index": 0
+      },
+      "x": {
+        "processed": [],
+        "meta": {
+          "label": "Repetition",
+          "unit": "",
+          "scale": "linear"
+        },
+        "raw": [
+          1,
+          2,
+          3
+        ]
+      },
+      "y": {
+        "processed": [],
+        "meta": {
+          "label": "RA = V43 / I12",
+          "unit": "ohm",
+          "scale": "linear"
+        },
+        "raw": [
+          {
+            "repetition": 1,
+            "relays": [
+              "c1",
+              "d2",
+              "a4",
+              "b3"
+            ],
+            "current_A": 0.0001,
+            "nplc": 5.0,
+            "compliance_V": 1.0,
+            "current_settle_s": 0.3,
+            "relay_settle_s": 0.2,
+            "voltage_range_V": 0.0,
+            "overrange_retries": 3,
+            "overrange_retry_delay_s": 0.5,
+            "positive_V": [],
+            "negative_V": [],
+            "accepted": false,
+            "discard_reason": "voltage_compliance",
+            "source_error": "6221: voltage compliance reached (status=0x8); requested current=0.0001 A, voltage limit=1 V; relay route=c1 d2 a4 b3; check current HI/LO relay groups, wiring and sample contacts; source-loop resistance limit at this current is 10000 ohm; reduce current if the connected sample needs more voltage"
+          },
+          {
+            "repetition": 2,
+            "relays": [
+              "c1",
+              "d2",
+              "a4",
+              "b3"
+            ],
+            "current_A": 0.0001,
+            "nplc": 5.0,
+            "compliance_V": 1.0,
+            "current_settle_s": 0.3,
+            "relay_settle_s": 0.2,
+            "voltage_range_V": 0.0,
+            "overrange_retries": 3,
+            "overrange_retry_delay_s": 0.5,
+            "positive_V": [],
+            "negative_V": [],
+            "accepted": false,
+            "discard_reason": "voltage_compliance",
+            "source_error": "6221: voltage compliance reached (status=0x8); requested current=0.0001 A, voltage limit=1 V; relay route=c1 d2 a4 b3; check current HI/LO relay groups, wiring and sample contacts; source-loop resistance limit at this current is 10000 ohm; reduce current if the connected sample needs more voltage"
+          },
+          {
+            "repetition": 3,
+            "relays": [
+              "c1",
+              "d2",
+              "a4",
+              "b3"
+            ],
+            "current_A": 0.0001,
+            "nplc": 5.0,
+            "compliance_V": 1.0,
+            "current_settle_s": 0.3,
+            "relay_settle_s": 0.2,
+            "voltage_range_V": 0.0,
+            "overrange_retries": 3,
+            "overrange_retry_delay_s": 0.5,
+            "positive_V": [],
+            "negative_V": [],
+            "accepted": false,
+            "discard_reason": "voltage_compliance",
+            "source_error": "6221: voltage compliance reached (status=0x8); requested current=0.0001 A, voltage limit=1 V; relay route=c1 d2 a4 b3; check current HI/LO relay groups, wiring and sample contacts; source-loop resistance limit at this current is 10000 ohm; reduce current if the connected sample needs more voltage"
+          }
+        ]
+      }
+    },
+    {
+      "schema_version": 1,
+      "name": "Van der Pauw - RB",
+      "created_at": "2026-10-12T11:26:55.493502",
+      "config": {
+        "pop_raw": false,
+        "sample_points_x": 0,
+        "sample_points_y": 0,
+        "refresh_all": false,
+        "custom_type": "histogram",
+        "start_index": 0
+      },
+      "x": {
+        "processed": [],
+        "meta": {
+          "label": "Repetition",
+          "unit": "",
+          "scale": "linear"
+        },
+        "raw": []
+      },
+      "y": {
+        "processed": [],
+        "meta": {
+          "label": "RB = V14 / I23",
+          "unit": "ohm",
+          "scale": "linear"
+        },
+        "raw": []
+      }
+    },
+    {
+      "schema_version": 1,
+      "name": "Van der Pauw - Sheet resistance",
+      "created_at": "2026-10-12T11:26:55.493517",
+      "config": {
+        "pop_raw": false,
+        "sample_points_x": 0,
+        "sample_points_y": 0,
+        "refresh_all": false,
+        "custom_type": "histogram",
+        "start_index": 0
+      },
+      "x": {
+        "processed": [],
+        "meta": {
+          "label": "Repetition",
+          "unit": "",
+          "scale": "linear"
+        },
+        "raw": []
+      },
+      "y": {
+        "processed": [],
+        "meta": {
+          "label": "Rs",
+          "unit": "ohm/square",
+          "scale": "linear"
+        },
+        "raw": []
+      }
+    }
+  ],
+  "valid_cycles": 0
+}

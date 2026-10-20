@@ -402,6 +402,113 @@ Contract and discovery tests use the standard library. Runtime integration tests
 require project dependencies and run with simulated instruments, without probing
 hardware. Hardware communication still needs verification with real devices.
 
+### Van der Pauw measurement
+
+The **Van der Pauw** task uses the PyMeasure Keithley 6221 and Keithley
+2182/2182A drivers with the Darderik Relay Matrix addon. All three instruments
+must be connected and detected for the task to appear. Both Keithleys need
+their own WASIC connection: this task uses software-controlled DC reversal,
+not the 6221 hardware Delta mode or an inter-instrument trigger link.
+
+Number the sample's four contacts **in cyclic order around its perimeter**.
+The defaults assume this wiring:
+
+| Parameter | Default | Connection |
+| --- | --- | --- |
+| `current_hi_group` | `c` | 6221 current HI |
+| `current_lo_group` | `d` | 6221 current LO |
+| `voltage_hi_group` | `a` | 2182 channel 1 voltage HI |
+| `voltage_lo_group` | `b` | 2182 channel 1 voltage LO |
+| `contact_1` ... `contact_4` | 1, 2, 3, 4 | Relay indices for the contacts in perimeter order |
+
+Groups and contact indices are editable task parameters. Use four distinct
+single-letter groups and four distinct positive relay indices supported by
+your matrix. With the defaults, the two configurations are:
+
+- **RA = V43 / I12**: `c1 d2 a4 b3`.
+- **RB = V14 / I23**: `c2 d3 a1 b4`.
+
+Each configuration measures voltage at `+current_A` and `-current_A`, giving
+`R = abs(mean(V+) - mean(V-)) / (2 I)`. This cancels a stable thermoelectric
+offset and reports resistance magnitudes. Verify contact polarity separately.
+The task solves the full equation
+`exp(-pi RA/Rs) + exp(-pi RB/Rs) = 1` for sheet resistance `Rs` in ohm/square.
+The method assumes a homogeneous, isotropic sample of uniform thickness without
+holes, small ohmic contacts at its perimeter, and zero applied magnetic field.
+See the [NIST measurement method](https://www.nist.gov/pml/nanoscale-device-characterization-division/popular-links/hall-effect/resistivity-and-hall).
+
+| Acquisition parameter | Default | Meaning |
+| --- | --- | --- |
+| `repetitions` | 1 | Number of attempted RA/RB cycles, including discarded cycles; task ends automatically |
+| `current_A` | 0.0001 | Positive current magnitude in amperes |
+| `compliance_V` | 1.0 | 6221 voltage limit; compliance discards the current RA/RB cycle |
+| `nplc` | 5.0 | 2182 integration time in power-line cycles (0.01 to 50) |
+| `samples_per_polarity` | 1 | Voltage readings averaged at each polarity |
+| `overrange_retries` | 3 | Additional attempts after an invalid 2182 reading (0 disables recovery; maximum 10) |
+| `overrange_retry_delay_s` | 0.5 | Interruptible settling delay between retries (0 to 10 seconds) |
+| `current_settle_s` | 0.2 | Settling time after enabling each current polarity |
+| `relay_settle_s` | 0.1 | Delay after output off, opening relays, and selecting a route |
+| `repeat_delay_s` | 0.0 | Pause between attempted repetitions, including discarded cycles |
+| `voltage_range_V` | 0.0 | 0 for autorange; otherwise 0.01, 0.1, 1, 10 or 100 V |
+| `merge_chart_files` | true | Save all result charts together in one JSON file |
+
+The relay matrix uses an `OK` handshake for every command. Its driver waits for
+that acknowledgement before another write; queries consume their output followed
+by the final `OK` (for example, `*IDN?` returns the IDN line, then `OK`).
+Command/response/acknowledgement exchanges are serialized so UI
+queries cannot consume a task's reply. Switching commands receive their `OK` before
+`*OPC?` is sent. If an acknowledgement or query response times out, reconnect the
+matrix to establish a fresh session before sending further commands. Serial discovery
+probes with `*IDN?` without sending a preceding `*CLS`, and consumes any final
+acknowledgement before handing the connection to the driver.
+
+The task resets both Keithleys, waits for the 2182 reset/configuration with `*OPC?`
+in idle mode, configures single channel 1 voltage measurements with
+auto-zero, and floats the 6221 output LO. It disables output before changing
+relays and on completion, stop or failure, sets current to zero, and opens the
+matrix. Compliance discards the current cycle and continues with the next repetition.
+It stops on source reading overflow, overtemperature, persistent invalid voltage or
+configuration errors. Instrument state is not restored to previous settings.
+Set current, compliance and settling times for your sample before running.
+
+Transient 2182 overflow (`9.9E37`) or nonfinite voltage triggers bounded rereads
+on the same route and current polarity, with source fault checks before and after
+each read. Invalid values are retained as strings in raw `invalid_readings` events
+with polarity, sample index and attempt; they are excluded from voltage averages.
+After all attempts fail the task stops and performs cleanup, retaining earlier
+complete cycles. Transport timeouts are not retried because a late reply could
+desynchronize the session. `*OPC?` synchronizes pending commands, not analog
+settling, and is not sent before each reading or during continuous initiation.
+
+If the 6221 reports measurement condition `8` (`0x8`), its voltage compliance
+limit was reached. The warning includes the requested current, voltage limit and
+active relay route. Both RA and RB of that repetition are excluded from all processed
+charts, Rs and statistics, even if RA completed before compliance in RB. Raw records
+are retained with `accepted=false`, `discard_reason=voltage_compliance` and the
+source error. Output is disabled and relays are opened before the next repetition.
+Earlier valid cycles remain included; rejected cycles are not retried automatically. At the defaults (100 microampere and 1 V), the source can
+sustain this current only up to approximately 10 kilohm of total source-loop
+resistance, including current contacts; this is not the calculated sheet resistance.
+Check that the configured groups match physical HI/LO wiring and that the sample
+contacts form a closed current path. An open circuit can also cause compliance.
+If the connected sample requires more voltage, reduce current or select a voltage
+limit appropriate for the sample. The task does not automatically increase the limit
+or accept readings in compliance. See the [6220/6221 reference manual, section 11](https://download.tek.com/manual/622x-901-01%20%28C%20-%20Oct%202008%29%28Ref%29.pdf).
+
+Three histograms show the distributions of RA, RB and Rs from complete cycles
+without compliance. Each saved observation retains its repetition index, so the
+three resistance series remain paired for later post-processing. The task computes
+neither a running mean nor uncertainty; perform that analysis on the saved data.
+Bulk resistivity requires thickness: `rho = Rs * thickness`.
+
+The saved RA/RB charts also retain raw records with relay routes, acquisition
+settings, and every positive/negative voltage reading, including interrupted
+acquisitions. Saved results can be
+reopened from the Charts page after this finite task finishes. This is a
+two-configuration measurement without additional reciprocal-contact checks.
+Hardware behavior must be verified on the actual setup; automated tests use
+simulated instruments and the installed PyMeasure 0.16.0 drivers.
+
 ## Troubleshooting
 
 ### Instruments Not Detected

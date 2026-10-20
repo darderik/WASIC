@@ -1,4 +1,5 @@
 from typing import List
+from threading import RLock
 from instruments import SCPI_Info, property_info
 import pymeasure.adapters as pma
 from pymeasure.instruments import Instrument,SCPIMixin
@@ -42,6 +43,8 @@ class RelayMatrix(SCPIMixin, Instrument):
             Baud rate for the serial communication (default is 9600).
         """
 
+        self._io_lock = RLock()
+        self._handshake_failed = False
         super().__init__(
             adapter,
             name=name,
@@ -49,11 +52,49 @@ class RelayMatrix(SCPIMixin, Instrument):
 
         self.init_properties()
 
-    def ask(self, command: str) -> str:
-        return str(super().ask(command))
+    def write(self, command: str, **kwargs) -> None:
+        """Send one command and consume its OK before allowing another send."""
+        with self._io_lock:
+            if self._handshake_failed:
+                raise RuntimeError("Relay matrix handshake lost; reconnect before sending commands")
+            try:
+                super().write(command, **kwargs)
+                self._read_acknowledgement(command)
+            except Exception:
+                self._handshake_failed = True
+                raise
+
+    def read(self, **kwargs) -> str:
+        with self._io_lock:
+            return super().read(**kwargs)
+
+    def _read_acknowledgement(self, command: str) -> None:
+        acknowledgement = str(super().read()).strip()
+        if acknowledgement.upper() != "OK":
+            raise RuntimeError(
+                f"Relay matrix expected final OK for {command!r}, received {acknowledgement!r}"
+            )
+
+    def ask(self, command: str, query_delay=None) -> str:
+        """Consume the query output and its final OK before allowing another send."""
+        with self._io_lock:
+            if self._handshake_failed:
+                raise RuntimeError("Relay matrix handshake lost; reconnect before sending commands")
+            try:
+                super().write(command)
+                self.wait_for(query_delay)
+                response = str(super().read())
+                self._read_acknowledgement(command)
+                return response
+            except Exception:
+                self._handshake_failed = True
+                raise
 
     def opc(self) -> bool:
-        return str(self.ask("*OPC?")).strip() == "1"
+        response = self.ask("*OPC?").strip()
+        if response != "1":
+            raise RuntimeError(f"Relay matrix operation not complete: {response!r}")
+        return True
 
     def idn(self) -> str:
         return str(self.ask("*IDN?"))

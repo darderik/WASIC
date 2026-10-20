@@ -33,6 +33,10 @@ class SCPI_Info:
     name: str = "instrument"
     resource_str: str = ""
     backend: str = "@py"
+    stop_bits: str = "one"
+    read_termination: str = "\n"
+    write_termination: str = "\n"
+    flow_control: str = "none"
 
 
 @dataclass

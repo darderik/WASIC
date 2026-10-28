@@ -1,10 +1,6 @@
 from typing import List, Callable, Optional, Any, Dict
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime
-import math
-import json
-import tempfile
-from pathlib import Path
 
 @dataclass
 class AxisMeta:
@@ -35,7 +31,7 @@ class ChartData_Config:
     pop_raw: bool
         If True, raw buffers will be cleared after compute/save when applicable.
     include_raw_on_save: bool
-        If False, raw arrays are excluded from exported JSON.
+        If False, raw arrays are excluded from exports.
     atomic_save: bool
         If True, saving will be atomic (write temp file then move into place).
     sample_points_x, sample_points_y: int
@@ -55,7 +51,7 @@ class ChartData_Config:
     """
 
     pop_raw: bool = field(default=False, metadata={"help": "Clear raw buffers after save when True."})
-    include_raw_on_save: bool = field(default=True, metadata={"help": "Include raw arrays when saving JSON."})
+    include_raw_on_save: bool = field(default=True, metadata={"help": "Include raw columns when saving CSV."})
     atomic_save: bool = field(default=True, metadata={"help": "Use atomic write when saving to disk."})
     sample_points_x: int = field(default=0, metadata={"help": "Max X points to keep (0=unlimited)."})
     sample_points_y: int = field(default=0, metadata={"help": "Max Y points to keep (0=unlimited)."})
@@ -128,7 +124,7 @@ class ChartData:
             self.y_series.raw.clear()
 
     def to_dict(self, include_raw: bool = True) -> Dict[str, Any]:
-        """Return a JSON-serializable dict containing only plain data (no callables or objects)."""
+        """Return a plain-data snapshot without runtime callables."""
         d: Dict[str, Any] = {
             "schema_version": self.schema_version,
             "name": self.name,
@@ -167,6 +163,9 @@ class ChartData:
     def from_dict(cls, data: Dict[str, Any]) -> "ChartData":
         cfg = data.get("config", {})
         config = ChartData_Config(
+            include_raw_on_save=cfg.get("include_raw_on_save", True),
+            atomic_save=cfg.get("atomic_save", True),
+            schema_version=cfg.get("schema_version", 1),
             pop_raw=cfg.get("pop_raw", False),
             sample_points_x=cfg.get("sample_points_x", 0),
             sample_points_y=cfg.get("sample_points_y", 0),
@@ -184,12 +183,12 @@ class ChartData:
         x_series = Series(
             raw=list(x.get("raw", [])),
             processed=list(x.get("processed", [])),
-            meta=AxisMeta(label=x_meta.get("label", ""), unit=x_meta.get("unit", ""), scale=x_meta.get("scale", "linear")),
+            meta=AxisMeta(label=x_meta.get("label", ""), unit=x_meta.get("unit", ""), scale=x_meta.get("scale", "linear"), description=x_meta.get("description", "")),
         )
         y_series = Series(
             raw=list(y.get("raw", [])),
             processed=list(y.get("processed", [])),
-            meta=AxisMeta(label=y_meta.get("label", ""), unit=y_meta.get("unit", ""), scale=y_meta.get("scale", "linear")),
+            meta=AxisMeta(label=y_meta.get("label", ""), unit=y_meta.get("unit", ""), scale=y_meta.get("scale", "linear"), description=y_meta.get("description", "")),
         )
 
         obj = cls(
@@ -202,29 +201,11 @@ class ChartData:
         )
         return obj
 
-    def save_json_atomic(self, path: str, include_raw: bool = True) -> None:
-        """Write the dict to a temporary file then atomically replace the destination.
+    def save_csv_atomic(self, path: str, include_raw: bool = True) -> None:
+        """Save tabular CSV samples and their chart metadata companion."""
+        from .chart_io import save_charts_csv
+        save_charts_csv([self], path, include_raw=include_raw, atomic=self.config.atomic_save)
 
-        This avoids partially written files if the process is interrupted.
-        """
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = None
-        try:
-            if self.config.atomic_save:
-                with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as tf:
-                    json.dump(self.to_dict(include_raw=include_raw), tf, ensure_ascii=False, indent=4)
-                    tmp = Path(tf.name)
-                tmp.replace(p)
-            else:
-                p.write_text(json.dumps(self.to_dict(include_raw=include_raw), ensure_ascii=False, indent=4), encoding="utf-8")
-        finally:
-            # best-effort cleanup
-            try:
-                if tmp is not None and tmp.exists():
-                    tmp.unlink(missing_ok=True)
-            except Exception:
-                pass
     # Switch: 0 -> X axis, 1 -> Y axis 2-> Total
     def get_length(self, switch: int) -> int:
         """

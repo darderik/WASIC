@@ -1,5 +1,4 @@
 import importlib.util
-import json
 import tempfile
 import time
 import unittest
@@ -44,7 +43,7 @@ class AddonRuntimeTests(unittest.TestCase):
         from addons.loader import load_addons
         self.assertFalse(self.registry.errors)
         self.assertEqual(set(self.registry.tasks), {"thermal_tracking", "test_charts", "van_der_pauw"})
-        self.assertEqual(len(self.registry.instruments), 6)
+        self.assertEqual(len(self.registry.instruments), 7)
         self.tasks.load_specs(self.registry.tasks.values())
         task = self.tasks.get_task("Test Charts")
         task.parameters["update_interval"] = 0.02
@@ -108,9 +107,11 @@ class AddonRuntimeTests(unittest.TestCase):
             self.assertFalse(processor.is_alive())
             self.assertEqual(task.data, [])
             self.assertIsNone(self.tasks._is_running)
-        saved = list(Path(self.temp.name).glob("*.json"))
+        from tasks.chart_io import load_charts_file
+        saved = [path for path in Path(self.temp.name).glob("*.csv")
+                 if not path.name.endswith(".meta.csv")]
         self.assertTrue(saved)
-        self.assertEqual(len(json.loads(saved[0].read_text())["charts"]), 4)
+        self.assertEqual(len(load_charts_file(saved[0])), 4)
 
     def test_return_and_exception_finish_the_run(self):
         def fail(ctx):

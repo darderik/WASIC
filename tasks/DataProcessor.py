@@ -107,12 +107,11 @@ class DataProcessor:
                 return
             date: str = self.datetime
             backup_schedule: float = Config().get("backup_schedule", 60.0)
-            file_path: str = (
-                Config().get("data_charts_path")
-                + "\\"
-                + Config().get("data_charts_relative_bkps")
+            file_path = os.path.join(
+                Config().get("data_charts_path"),
+                Config().get("data_charts_relative_bkps"),
             )
-            postfix: str = f"{date}.json"
+            postfix: str = f"{date}.csv"
             local_data = copy.copy(self.data)
             for chart in local_data:
                 # Set a backup name
@@ -121,6 +120,6 @@ class DataProcessor:
                     file_path,
                     backup_file_name,
                 )
-                chart.save_json_atomic(full_path)
+                chart.save_csv_atomic(full_path)
         except Exception as e:
             logger.error(f"Error in backup saver: {e}")

@@ -5,9 +5,9 @@ from threading import Thread, Event, Lock, RLock, current_thread
 from wasic_api import TaskSpec, TaskContext
 from instruments import Instrument_Entry
 from .structures import ChartData
+from .chart_io import save_charts_csv
 from .helper import str_to_bool
 from connections import Connections
-import json
 import datetime
 import os
 import logging
@@ -68,33 +68,61 @@ class Task:
                 resolved[role] = entry.scpi_instrument
         return resolved
 
-    def _execute(self, context) -> None:
+    def _execute(self, context, retained=()) -> None:
         try:
             self.function(context)
         except Exception:
             logger.exception("Task %s failed", self.name)
         finally:
+            # self.function includes the task's finally/cleanup. Pins protect
+            # only the connection lifetime; no I/O lock is held across the run.
+            for io in reversed(retained):
+                io.release()
             self.exit_flag.set()
 
     def start(self) -> None:
         """Starts the task's function in a new non-blocking thread if not already running."""
         with self._rlock:
             if not self.running and (self.thread_handle is None or not self.thread_handle.is_alive()):
-                context = self
-                if self.spec:
-                    instruments = self.resolve_instruments()
-                    self.instruments = [Connections().get_instrument_by_driver(driver_id)
-                                        for driver_id in self.spec.instruments.values()]
-                    parameters = self.spec.parse_parameters(self.parameters)
-                    self.parameters = parameters
-                    context = TaskContext(instruments, parameters, self.data, self.exit_flag)
+                retained = []
+                # Resolve and pin under the registry lock, closing the gap in
+                # which a refresh could otherwise replace the selected entries.
+                with Connections().instrument_selection() as connections:
+                    context = self
+                    if self.spec:
+                        instruments = self.resolve_instruments()
+                        self.instruments = [connections.get_instrument_by_driver(driver_id)
+                                            for driver_id in self.spec.instruments.values()]
+                        parameters = self.spec.parse_parameters(self.parameters)
+                        self.parameters = parameters
+                        context = TaskContext(instruments, parameters, self.data, self.exit_flag)
+                    else:
+                        self.instruments = [connections.get_instrument(alias)
+                                            for alias in self.instr_aliases]
+                    try:
+                        for entry in self.instruments:
+                            if entry is not None:
+                                entry.io.retain()
+                                retained.append(entry.io)
+                    except Exception:
+                        for io in reversed(retained):
+                            io.release()
+                        raise
                 self.exit_flag.clear()
                 self.running = True
                 # Task thread
                 self.thread_handle = Thread(
-                    target=self._execute, args=(context,)
+                    target=self._execute, args=(context, tuple(retained))
                 )
-                self.thread_handle.start()
+                try:
+                    self.thread_handle.start()
+                except Exception:
+                    for io in reversed(retained):
+                        io.release()
+                    self.thread_handle = None
+                    self.running = False
+                    self.exit_flag.set()
+                    raise
                 # Data processor thread
                 from .DataProcessor import DataProcessor
                 self.data_processor_obj: Optional[DataProcessor] = DataProcessor(self)
@@ -134,23 +162,19 @@ class Task:
             os.makedirs(Config().get("data_charts_path"), exist_ok=True)
             if not str_to_bool(str(self.parameters.get("merge_chart_files", "false")).lower()):
                 for chart in self.data:
-                    file_name = f"{chart.name}_{self.custom_alias}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"
+                    file_name = f"{chart.name}_{self.custom_alias}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
                     file_path = os.path.join(Config().get("data_charts_path"), file_name)
-                    chart.save_json_atomic(file_path)
+                    chart.save_csv_atomic(file_path)
                     logger.info(f"Chart data saved to {file_path}.")
             else:
-                merged_data = {
-                    "charts": [chart.to_dict() for chart in self.data],
-                    "metadata": {
-                        "task_name": self.name,
-                        "custom_alias": self.custom_alias,
-                        "timestamp": datetime.datetime.now().isoformat(),
-                    },
+                metadata = {
+                    "task_name": self.name,
+                    "custom_alias": self.custom_alias,
+                    "timestamp": datetime.datetime.now().isoformat(),
                 }
-                file_name = f"merged_charts_{self.custom_alias}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"
+                file_name = f"merged_charts_{self.custom_alias}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
                 file_path = os.path.join(Config().get("data_charts_path"), file_name)
-                with open(file_path, "w") as f:
-                    json.dump(merged_data, f, indent=4)
+                save_charts_csv(self.data, file_path, metadata=metadata)
                 logger.info(f"Merged chart data saved to {file_path}.")
         except Exception as e:
             logger.error(f"Failed to save merged chart data: {e}")

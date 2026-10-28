@@ -1,6 +1,5 @@
 """Numerical, acquisition and failure-path tests without laboratory hardware."""
 import importlib.util
-import json
 import math
 import tempfile
 import unittest
@@ -68,6 +67,13 @@ class Meter:
     def trigger_immediately(self):
         pass
 
+    def stop_buffer(self):
+        self.write(":ABOR")
+
+    @property
+    def complete(self):
+        return self.ask("*OPC?")
+
     def write(self, command):
         pass
 
@@ -96,9 +102,15 @@ class VanDerPauwTests(unittest.TestCase):
         self.source = Source()
         self.matrix = Matrix(self.source)
         self.meter = Meter(self.source, self.matrix)
+        # Acquisition regression tests inject faults after the initial check.
+        # The preflight tests below explicitly restore the real check.
+        self.preflight_patch = patch("addons.tasks.van_der_pauw._preflight")
+        self.preflight_patch.start()
+        self.addCleanup(self.preflight_patch.stop)
 
     def context(self, **parameters):
-        values = {"relay_settle_s": 0, "current_settle_s": 0,
+        values = {"current_A": .0001, "compliance_V": 1,
+                  "relay_settle_s": 0, "current_settle_s": 0,
                   "overrange_retry_delay_s": 0, **parameters}
         return TaskContext({"source": self.source, "matrix": self.matrix, "meter": self.meter},
                            self.spec.parse_parameters(values), [], Event())
@@ -107,6 +119,110 @@ class VanDerPauwTests(unittest.TestCase):
         self.assertFalse(self.source.enabled)
         self.assertEqual(self.source.source_current, 0)
         self.assertEqual(self.matrix.route, ())
+
+    def test_preflight_checks_all_routes_and_polarities_before_measurement(self):
+        self.preflight_patch.stop()
+        ctx = self.context(samples_per_polarity=2, repetitions=2,
+                           current_hi_group="d", current_lo_group="c")
+        states = []
+        self.meter.on_read = lambda: states.append(
+            (self.matrix.route, self.source.source_current,
+             sum(len(chart.y_series.raw) for chart in ctx.data)))
+        self.spec.run(ctx)
+        routes = self.routes(ctx.parameters)
+        self.assertEqual(states[:4], [(route, sign * .0001, 0)
+                                     for route in routes.values() for sign in (1, -1)])
+        self.assertEqual(self.matrix.routes, list(routes.values()) * 3)
+        self.assertEqual(self.meter.read_count, 20)
+        self.assertEqual(ctx.data[2].x_series.processed, [1, 2])
+        self.assert_off()
+
+    def test_preflight_reports_compliance_on_every_route_and_polarity(self):
+        self.preflight_patch.stop()
+        self.source.status = 8
+        ctx = self.context(repetitions=3)
+        with self.assertLogs("addons.tasks.van_der_pauw", level="WARNING"), \
+             self.assertRaisesRegex(RuntimeError, "initial check failed") as error:
+            self.spec.run(ctx)
+        self.assertEqual(len(self.matrix.routes), 2)
+        self.assertEqual(self.meter.read_count, 0)
+        for name, route in self.routes(ctx.parameters).items():
+            for sign in (1, -1):
+                self.assertIn(f"{name}, current={sign * .0001:g} A, "
+                              f"relay route={' '.join(route)}", str(error.exception))
+        self.assertTrue(all(not chart.y_series.raw for chart in ctx.data))
+        self.assert_off()
+
+    def test_preflight_overflow_on_rb_negative_blocks_measurement(self):
+        self.preflight_patch.stop()
+        ctx = self.context(overrange_retries=1)
+        with patch.object(Meter, "voltage", new_callable=PropertyMock,
+                          side_effect=[.001, -.001, .002, 9.9e37, 9.9e37]) as read, \
+             self.assertLogs("addons.tasks.van_der_pauw", level="WARNING"), \
+             self.assertRaisesRegex(RuntimeError, "RB, current=-0.0001 A"):
+            self.spec.run(ctx)
+        self.assertEqual(read.call_count, 5)
+        self.assertTrue(all(not chart.y_series.raw for chart in ctx.data))
+        self.assert_off()
+
+    def test_preflight_source_overflow_checks_both_routes(self):
+        self.preflight_patch.stop()
+        self.source.status = 1
+        ctx = self.context()
+        with self.assertLogs("addons.tasks.van_der_pauw", level="WARNING"), \
+             self.assertRaisesRegex(RuntimeError, "reading overflow"):
+            self.spec.run(ctx)
+        self.assertEqual(len(self.matrix.routes), 2)
+        self.assertEqual(self.meter.read_count, 0)
+        self.assert_off()
+
+    def test_preflight_transient_overflow_recovers(self):
+        self.preflight_patch.stop()
+        ctx = self.context()
+        with patch.object(Meter, "voltage", new_callable=PropertyMock,
+                          side_effect=[9.9e37, .001, -.001, .002, -.002,
+                                       .001, -.001, .002, -.002]), \
+             self.assertLogs("addons.tasks.van_der_pauw", level="WARNING"):
+            self.spec.run(ctx)
+        self.assertEqual(ctx.data[2].x_series.processed, [1])
+        self.assertNotIn("invalid_readings", ctx.data[0].y_series.raw[0])
+        self.assert_off()
+
+    def test_preflight_timeout_aborts_without_trying_other_routes(self):
+        self.preflight_patch.stop()
+        ctx = self.context()
+        self.meter.on_read = lambda: (_ for _ in ()).throw(TimeoutError("VISA timeout"))
+        with self.assertRaises(TimeoutError):
+            self.spec.run(ctx)
+        self.assertEqual(len(self.matrix.routes), 1)
+        self.assert_off()
+
+    def test_preflight_cancellation_does_not_start_acquisition(self):
+        self.preflight_patch.stop()
+        ctx = self.context()
+        self.meter.on_read = ctx.exit_flag.set
+        self.spec.run(ctx)
+        self.assertEqual(self.meter.read_count, 1)
+        self.assertTrue(all(not chart.y_series.raw for chart in ctx.data))
+        self.assert_off()
+
+    def csv_roundtrip(self, chart):
+        from tasks.chart_io import load_charts_file
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "chart.csv"
+            chart.save_csv_atomic(path)
+            restored, = load_charts_file(path)
+            return restored
+
+    def assert_finite_values(self, value):
+        if isinstance(value, dict):
+            for child in value.values():
+                self.assert_finite_values(child)
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                self.assert_finite_values(child)
+        elif isinstance(value, float):
+            self.assertTrue(math.isfinite(value))
 
     def test_symmetric_solution_over_scales(self):
         for resistance in (1e-12, 1, 1e12):
@@ -135,8 +251,7 @@ class VanDerPauwTests(unittest.TestCase):
         self.assertAlmostEqual(ctx.data[1].y_series.processed[0], 20)
         self.assertAlmostEqual(ctx.data[2].y_series.processed[0], self.solve(10, 20))
         self.assertEqual(len(ctx.data), 3)
-        saved = json.loads(json.dumps(ctx.data[0].to_dict()))
-        record = saved["y"]["raw"][0]
+        record = self.csv_roundtrip(ctx.data[0]).y_series.raw[0]
         self.assertEqual(len(record["positive_V"]), 2)
         self.assertEqual(len(record["negative_V"]), 2)
         self.assertEqual(record["relays"], ["c1", "d2", "a4", "b3"])
@@ -173,7 +288,7 @@ class VanDerPauwTests(unittest.TestCase):
         # Two initialization OFF commands and the final cleanup only.
         self.assertEqual(disable.call_count, 3)
         self.assertEqual(self.matrix.switch_states[:-1],
-                         [(True, .0001)] * 2 + [(True, -.0001)] * 10)
+                         [(True, .0001)] + [(True, -.0001)] * 5)
         self.assertEqual(self.matrix.switch_states[-1], (False, 0))
         self.assert_off()
 
@@ -243,7 +358,7 @@ class VanDerPauwTests(unittest.TestCase):
         ctx = self.context()
         with self.assertLogs("addons.tasks.van_der_pauw", level="WARNING"):
             self.spec.run(ctx)
-        record = json.loads(json.dumps(ctx.data[0].to_dict()))["y"]["raw"][0]
+        record = self.csv_roundtrip(ctx.data[0]).y_series.raw[0]
         for detail in ("voltage compliance reached", "0x8", "0.0001 A", "1 V",
                        "c1 d2 a4 b3", "10000 ohm"):
             self.assertIn(detail, record["source_error"])
@@ -338,7 +453,7 @@ class VanDerPauwTests(unittest.TestCase):
         record = ctx.data[0].y_series.raw[0]
         self.assertEqual(record["positive_V"], [.001023])
         self.assertEqual(len(record["invalid_readings"]), 2)
-        json.dumps(record, allow_nan=False)
+        self.assert_finite_values(record)
         self.assertAlmostEqual(ctx.data[2].y_series.processed[0], self.solve(10, 20))
         self.assert_off()
 
@@ -439,13 +554,12 @@ class VanDerPauwTests(unittest.TestCase):
         self.assertEqual(self.matrix.route, ("a1", "b2", "c4", "d3"))
         self.assertEqual(self.source.source_current, 0)
 
-    def test_all_charts_render_and_survive_json_roundtrip(self):
-        from tasks import ChartData
+    def test_all_charts_render_and_survive_csv_roundtrip(self):
         from webapp import make_plotly_figure
         ctx = self.context(repetitions=3)
         self.spec.run(ctx)
         for chart in ctx.data:
-            restored = ChartData.from_dict(json.loads(json.dumps(chart.to_dict())))
+            restored = self.csv_roundtrip(chart)
             figure = make_plotly_figure(restored)
             self.assertEqual(figure.data[0].type, "histogram")
             self.assertEqual(list(figure.data[0].x), restored.y_series.processed)
@@ -475,18 +589,20 @@ class VanDerPauwTests(unittest.TestCase):
                         self.assertIsNone(manager._is_running)
                         self.assertEqual(task.data, [])
                         self.assert_off()
-                saved = list(Path(directory).glob("*.json"))
+                from tasks.chart_io import load_charts_file
+                saved = [path for path in Path(directory).glob("*.csv")
+                         if not path.name.endswith(".meta.csv")]
                 self.assertTrue(saved)
-                payload = json.loads(saved[0].read_text())
-                self.assertEqual(len(payload["charts"]), 3)
-                self.assertEqual(len(payload["charts"][2]["y"]["processed"]), 2)
-                self.assertTrue(all(chart["config"]["custom_type"] == "histogram"
-                                    for chart in payload["charts"]))
+                charts = load_charts_file(saved[0])
+                self.assertEqual(len(charts), 3)
+                self.assertEqual(len(charts[2].y_series.processed), 2)
+                self.assertTrue(all(chart.config.custom_type == "histogram" for chart in charts))
         finally:
             manager.stop_task()
             config._data, manager._tasks_list, manager._is_running = old_config, old_tasks, old_running
 
     def test_pymeasure_drivers_execute_the_acquisition(self):
+        self.preflight_patch.stop()
         from pymeasure.adapters import Adapter
         from pymeasure.instruments.keithley import Keithley2182, Keithley6221
         from addons.instruments.RelayMatrix import RelayMatrix
@@ -519,7 +635,7 @@ class VanDerPauwTests(unittest.TestCase):
                     return "1"
                 raise AssertionError(f"Unexpected query {command}")
 
-        src_adapter, meter_adapter, relay_adapter = ScriptedAdapter(), ScriptedAdapter((.001023, -.000977, .002023, -.001977)), ScriptedAdapter(handshake=True)
+        src_adapter, meter_adapter, relay_adapter = ScriptedAdapter(), ScriptedAdapter((.001023, -.000977, .002023, -.001977) * 2), ScriptedAdapter(handshake=True)
         ctx = self.context()
         ctx.instruments = {"source": Keithley6221(src_adapter), "meter": Keithley2182(meter_adapter),
                            "matrix": RelayMatrix(relay_adapter, "Matrix")}

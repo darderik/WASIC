@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from serial import Serial
 from config import Config
 import time
@@ -6,6 +6,7 @@ from typing import Optional
 import pyvisa as visa
 import logging
 from pymeasure.instruments import Instrument
+from .io import InstrumentIO
 
 logger = logging.getLogger(__name__)
 
@@ -44,15 +45,21 @@ class Instrument_Entry:
     data: SCPI_Info
     scpi_instrument: Instrument
     _config: Config = Config()
+    io: InstrumentIO = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self):
+        self.io = InstrumentIO.for_instrument(self.scpi_instrument)
 
     def write_wrapper(self, command: str) -> None:
-        self.scpi_instrument.write(command)
+        with self.io.transaction():
+            self.scpi_instrument.write(command)
 
     def read_wrapper(self) -> str:
         # The CLS handling should be implemented in the children classes
         # Refer to test_instrument example
         try:
-            toReturn = self.scpi_instrument.read()
+            with self.io.transaction():
+                toReturn = self.scpi_instrument.read()
         except visa.errors.VisaIOError as e:
             logger.error(f"VisaIOError occurred: {e}")
             raise
@@ -62,5 +69,6 @@ class Instrument_Entry:
         # The CLS handling should be implemented in the children classes
         # Refer to test_instrument example
         toReturn: str = ""
-        toReturn = self.scpi_instrument.ask(command)
+        with self.io.transaction():
+            toReturn = self.scpi_instrument.ask(command)
         return toReturn

@@ -214,6 +214,23 @@ The web interface opens automatically at `http://localhost:8501`
 deactivate
 ```
 
+### Chart data files
+
+Final results and periodic backups are saved as tabular CSV (comma delimiter,
+decimal point, full numeric precision). Column headers use `Name(Unit)`, for
+example `Time(s),R_s(ohm)`; unitless columns use `Name()`. Each row is a sample,
+and unequal series lengths are padded with empty cells. Merged exports place
+each chart's X/Y columns side by side, prefixing labels with the chart name.
+
+Each CSV has a `.csv.meta.csv` companion containing chart names, axis metadata,
+settings and column mappings in a typed CSV table. Keep both files together
+to restore the original charts in Streamlit, including histogram types and
+`start_index`. Raw columns are included when `include_raw_on_save` is enabled;
+structured raw records are expanded into separate columns (for example
+`R_s_raw.positive_V.0()`). Raw fields without their own unit metadata use empty
+parentheses. The Charts Selector uses the configured `data_charts_path` and
+reads CSV exports and plain two-column CSVs.
+
 ## Project Structure
 
 ```
@@ -245,7 +262,7 @@ WASIC/
 │   │   └── logs.py        # Log viewer
 │   └── web_utilities.py    # UI helpers
 ├── data/                    # Runtime data directory (auto-created)
-│   ├── charts/             # Measurement data (JSON)
+│   ├── charts/             # Measurement data (CSV)
 │   ├── instr/              # Instrument configurations
 │   └── wasic.log           # Application log
 ├── requirements.txt         # Python dependencies
@@ -306,6 +323,28 @@ the runtime handles logging and signals completion. Use `exit_flag.wait(interval
 for responsive cancellation. The context's parameters are validated at launch and
 cannot be edited through the UI while a task runs.
 
+Instrument communication is synchronized by `InstrumentIO`, automatically bound
+when an `Instrument_Entry` is created. Each physical driver has its own reentrant
+lock, shared by its channels and any existing driver `_io_lock`. A query holds it
+from the command through the complete response; ordinary task waits and calculations
+leave it free. Properties, manual commands and connection verification use the same
+protection. New channels created with `add_child()` inherit it automatically.
+
+Tasks retain their selected connections before the worker starts and release them
+after the measurement function, including its cleanup, returns or raises. This is
+a reference count, not a lock held for the entire task: refresh queries still run,
+while full discovery keeps active connections open and excludes their ports from
+the scan. An unsuccessful verification also keeps a connection needed by a task.
+Unused connections can be closed normally.
+
+For an indivisible sequence of multiple driver calls, use
+`with entry.io.transaction():` or
+`with InstrumentIO.for_instrument(driver).transaction():` (import `InstrumentIO`
+from `instruments`). Keep the scope limited to the required exchange. Use driver
+methods for communication; direct calls to the underlying adapter or VISA resource
+bypass this protection. Separate manual `write()` and `read()` calls need an
+explicit transaction, or should be replaced by `ask()`.
+
 Parameter types are `str`, `int`, `float` and `bool`. Definitions support `minimum`,
 `maximum` and `choices`; the UI generates appropriate controls. Unknown parameters,
 invalid values and nonfinite floats are rejected. `merge_chart_files` is an optional
@@ -359,6 +398,70 @@ Use `property_info` entries in `properties_list` for editable instrument propert
 the UI also supports introspection for existing drivers. A wrapper for a third-party
 driver is demonstrated in
 [`addons/instruments/keithley2000.py`](addons/instruments/keithley2000.py).
+
+### Rohde & Schwarz ZNB43
+
+[`addons/instruments/ZNB43.py`](addons/instruments/ZNB43.py) provides a
+PyMeasure driver (`SCPIMixin`, `Instrument`, and measurement `Channel` objects)
+and the `znb43` instrument addon. WASIC recognizes IDN strings containing
+`ZNB43` and exposes channel 1 settings and the global RF switch in Instruments.
+Construction sends no commands; call `reset()` explicitly when needed.
+
+```python
+from addons.instruments.ZNB43 import ZNB43
+
+vna = ZNB43(
+    "TCPIP0::192.168.1.100::inst0::INSTR",  # replace with the instrument address
+    visa_library="@py",
+    timeout=60000,  # VISA timeout in milliseconds, covering the entire acquisition
+    read_termination="\n",
+    write_termination="\n",
+)
+try:
+    ch = vna.ch_1  # measurement channel, independent of physical RF ports
+    ch.define_trace("WASIC_S21", "S21")
+    ch.sweep_type = "LIN"
+    ch.start_frequency = 1e9
+    ch.stop_frequency = 2e9
+    ch.sweep_points = 201
+    ch.if_bandwidth = 1000
+    ch.source_power = -20  # dBm; choose a suitable level for the DUT
+    ch.trigger_source = "IMM"
+    ch.average_count = 4
+    ch.sweep_count = 4  # separate from the averaging factor
+    ch.averaging_enabled = True
+    ch.clear_averages()
+    vna.rf_enabled = True
+    ch.sweep()  # single acquisition cycle, waits for *OPC?
+    frequency_hz, s21 = ch.read_trace("WASIC_S21")
+finally:
+    try:
+        vna.rf_enabled = False
+    finally:
+        vna.adapter.close()
+```
+
+Tasks can request `instruments={"vna": "znb43"}` and access the driver through
+`ctx.instruments["vna"]`. Use `vna.channel(2)` for another measurement channel;
+`define_trace()` creates that channel on the analyzer if it does not exist.
+Trace names must be unique across channels; defining an existing name on the
+same channel replaces that trace. New traces are not automatically displayed
+on the instrument screen.
+
+`read_trace()` returns the actual stimulus axis and Python complex values
+(`SDAT`), including the applied calibration and ignoring trace mathematics.
+It does not acquire data; use a completed single sweep for a consistent snapshot.
+The axis is in Hz for frequency sweeps, dBm for power sweeps, and seconds for
+time sweeps. `read_formatted_data()` returns `FDAT` in the current display format
+(one value per point for Cartesian formats, two for polar/Smith formats).
+Both methods set the instrument-wide transfer format to ASCII and leave it there.
+Power limits depend on frequency and installed options; IF bandwidth above
+1 MHz requires option K17. External/manual triggering requires a suitable timeout
+when waiting for completion. Check `vna.check_errors()` for instrument errors.
+
+Command reference: [R&S ZNB official user manual](https://www.rohde-schwarz.com/webhelp/ZNB_HTML_UserManual_en/Content/welcome.htm).
+Protocol and discovery tests use simulated adapters; physical ZNB43 communication
+still requires verification on the instrument.
 
 ### Loading addons and migrating older extensions
 
@@ -450,7 +553,7 @@ See the [NIST measurement method](https://www.nist.gov/pml/nanoscale-device-char
 | `relay_settle_s` | 0.1 | Delay after output off, opening relays, and selecting a route |
 | `repeat_delay_s` | 0.0 | Pause between attempted repetitions, including discarded cycles |
 | `voltage_range_V` | 0.0 | 0 for autorange; otherwise 0.01, 0.1, 1, 10 or 100 V |
-| `merge_chart_files` | true | Save all result charts together in one JSON file |
+| `merge_chart_files` | true | Save all result charts together in one CSV file |
 
 The relay matrix uses an `OK` handshake for every command. Its driver waits for
 that acknowledgement before another write; queries consume their output followed

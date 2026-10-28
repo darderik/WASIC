@@ -4,7 +4,6 @@ Explicit script only, excluded from unittest discovery. Defaults match the
 saved measurement: 100 uA, 1 V, NPLC 5, autorange, 0.3/0.2 s settling.
 """
 import argparse
-import json
 import logging
 import sys
 import time
@@ -16,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from addons.loader import load_addons
 from connections import Connections
 from tasks import Task
+from tasks.chart_io import save_charts_csv
 from wasic_api import TaskContext
 from addons.tasks.van_der_pauw import relay_routes
 
@@ -94,7 +94,7 @@ def main():
                               "relays": matrix.ask("switch:commute:byte:status?"),
                               "source_errors": source.check_errors(), "meter_errors": meter.check_errors()}
                     result["continuity"].append(record)
-                    print(json.dumps(record), flush=True)
+                    print(record, flush=True)
                     source.disable_source()
             finally:
                 source.disable_source()
@@ -145,7 +145,6 @@ def main():
         if timer:
             timer.cancel()
         if ctx:
-            result["charts"] = [chart.to_dict() for chart in ctx.data]
             result["valid_cycles"] = len(ctx.data[2].y_series.processed) if len(ctx.data) == 3 else 0
         # Retry source-off on exceptional exits as well as task cleanup.
         entry = connections.get_instrument_by_driver("keithley6221")
@@ -155,9 +154,9 @@ def main():
         for entry in list(connections.instruments_list):
             connections._disconnect_entry(entry)
         connections.instruments_list.clear()
-        Path(str(stem) + ".json").write_text(json.dumps(result, indent=2), encoding="utf-8")
-    print(json.dumps({k: v for k, v in result.items() if k != "charts"}), flush=True)
-    print(f"Saved {stem}.json and .log", flush=True)
+        save_charts_csv(ctx.data if ctx else [], stem.with_suffix(".csv"), metadata=result)
+    print(result, flush=True)
+    print(f"Saved {stem}.csv, .csv.meta.csv and .log", flush=True)
 
 
 if __name__ == "__main__":

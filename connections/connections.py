@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import threading
+from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 from threading import Lock, Thread
@@ -17,7 +18,7 @@ from serial.tools.list_ports import comports
 
 from config import Config
 from addons.loader import registry
-from instruments import Instrument_Entry, SCPI_Info
+from instruments import Instrument_Entry, SCPI_Info, InstrumentInUseError
 from .baud_detector import BaudTrialDetector, SerialParamCache, parse_response, parse_stop_bits
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,8 @@ SerialDetection = tuple[str, str, int, str, str, str, str]
 
 class Connections:
     _instance = None
-    _instrument_lock = threading.Lock()
+    # Registry/lifetime changes only. Communication uses each entry's io lock.
+    _instrument_lock = threading.RLock()
     _file_lock = threading.Lock()
 
     instruments_list: list[Instrument_Entry] = []
@@ -43,6 +45,15 @@ class Connections:
     # ---------------------------------------------------------------------
     # Public API
     # ---------------------------------------------------------------------
+
+    @contextmanager
+    def instrument_selection(self):
+        """Atomically resolve entries and pin them before starting a worker.
+
+        Never hold this registry lock for the duration of a task.
+        """
+        with self._instrument_lock:
+            yield self
 
     def get_instrument(self, keyword: str) -> Optional[Instrument_Entry]:
         keyword = keyword.lower()
@@ -79,8 +90,9 @@ class Connections:
             for instrument in self.instruments_list:
                 if self._is_instrument_alive(instrument):
                     valid_instruments.append(instrument)
-                else:
-                    self._disconnect_entry(instrument)
+                elif not self._disconnect_entry(instrument):
+                    # A failed probe must not close a task's cleanup connection.
+                    valid_instruments.append(instrument)
 
             self.instruments_list = valid_instruments
 
@@ -104,7 +116,7 @@ class Connections:
             self._discover_serial_instruments(serial_ports)
 
     def save_config(self) -> None:
-        with self._file_lock:
+        with self._file_lock, self._instrument_lock:
             raw_path = self._config.get("instrument_connections_datapath", "")
             file_path = self._normalize_path(raw_path)
 
@@ -123,7 +135,7 @@ class Connections:
                 logger.error("Failed to save instrument configuration: %s", exc)
 
     def load_config(self) -> None:
-        with self._file_lock:
+        with self._file_lock, self._instrument_lock:
             try:
                 instruments_info = self._read_config_file()
 
@@ -452,17 +464,24 @@ class Connections:
     # ---------------------------------------------------------------------
 
     def _clear_instruments(self) -> None:
+        retained = []
         for instrument in list(self.instruments_list):
-            self._disconnect_entry(instrument)
+            if not self._disconnect_entry(instrument):
+                retained.append(instrument)
 
-        self.instruments_list.clear()
+        self.instruments_list[:] = retained
 
-    def _disconnect_entry(self, entry: Instrument_Entry) -> None:
+    def _disconnect_entry(self, entry: Instrument_Entry) -> bool:
         try:
-            self._disconnect_instrument(entry.scpi_instrument)
+            entry.io.close(lambda: self._disconnect_instrument(entry.scpi_instrument))
             logger.debug("Disconnected instrument: %s", entry.data.idn)
+            return True
+        except InstrumentInUseError:
+            logger.info("Keeping instrument in use by a task: %s", entry.data.idn)
+            return False
         except Exception as exc:
             logger.error("Failed to disconnect %s: %s", entry.data.idn, exc)
+            return False
 
     @staticmethod
     def _disconnect_instrument(instrument: Instrument) -> None:
@@ -484,7 +503,7 @@ class Connections:
     @staticmethod
     def _is_instrument_alive(entry: Instrument_Entry) -> bool:
         try:
-            response = parse_response(entry.scpi_instrument.ask("*IDN?"))
+            response = parse_response(entry.ask_wrapper("*IDN?"))
             return response is not None and response == parse_response(entry.data.idn)
         except Exception as exc:
             logger.warning("Failed to verify instrument %s: %s", entry.data.idn, exc)

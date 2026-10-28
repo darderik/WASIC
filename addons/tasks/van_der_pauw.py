@@ -58,6 +58,10 @@ class _Compliance(RuntimeError):
     """Reject the current RA/RB cycle while allowing subsequent repetitions."""
 
 
+class _Overflow(RuntimeError):
+    """An instrument reading remains outside its supported range."""
+
+
 def _wait(ctx, seconds=0):
     if ctx.exit_flag.wait(seconds):
         raise _Stopped
@@ -85,6 +89,8 @@ def _check_source(source, *, current=None, compliance=None, route=()):
             details += "; reduce current if the connected sample needs more voltage"
         if status & 0x8 and not status & 0x5:
             raise _Compliance(details)
+        if status & 0x1 and not status & 0x4:
+            raise _Overflow(details)
         raise RuntimeError(details)
 
 
@@ -115,7 +121,7 @@ def _read_voltage(ctx, source, meter, route, record, key, p):
             _check_source(source, current=current,
                           compliance=p["compliance_V"], route=route)
             if attempt == p["overrange_retries"]:
-                raise RuntimeError("2182 returned a nonfinite/overrange voltage "
+                raise _Overflow("2182 returned a nonfinite/overrange voltage "
                                    f"after {attempt + 1} attempts; check voltage contacts and settling")
             _wait(ctx, p["overrange_retry_delay_s"])
             continue
@@ -125,31 +131,38 @@ def _read_voltage(ctx, source, meter, route, record, key, p):
         return
 
 
-def _measure_resistance(ctx, source, meter, matrix, route, chart, repetition, p):
+def _connect_route(ctx, matrix, route, p):
+    """Switch routes with the source enabled, allowing transient compliance."""
     _wait(ctx)
     # Keep output enabled: compliance while the current path is open is
     # expected. Check source status only after reconnecting and settling.
-    matrix.switch_commute_reset_all()
     _wait(ctx, p["relay_settle_s"])
     matrix.switch_commute_exclusive(*route)
     _wait(ctx, p["relay_settle_s"])
 
-    record = {"repetition": repetition, "relays": list(route),
-              "current_A": p["current_A"], "nplc": p["nplc"],
-              "compliance_V": p["compliance_V"],
-              "current_settle_s": p["current_settle_s"],
-              "relay_settle_s": p["relay_settle_s"],
-              "voltage_range_V": p["voltage_range_V"],
-              "overrange_retries": p["overrange_retries"],
-              "overrange_retry_delay_s": p["overrange_retry_delay_s"],
-              "positive_V": [], "negative_V": []}
-    # Persist even partial raw acquisitions when stopped or a reading fails.
-    chart.x_series.raw.append(repetition)
-    chart.y_series.raw.append(record)
+
+def _polarities(ctx, source, p):
+    """Yield each polarity after interruptible current settling."""
     for sign, key in ((1, "positive_V"), (-1, "negative_V")):
         _wait(ctx)
         source.source_current = sign * p["current_A"]
         _wait(ctx, p["current_settle_s"])
+        yield key
+
+
+def _measure_resistance(ctx, source, meter, matrix, route, chart, repetition, p):
+    _connect_route(ctx, matrix, route, p)
+
+    record = {"repetition": repetition, "relays": list(route),
+              **{key: p[key] for key in (
+                  "current_A", "nplc", "compliance_V", "current_settle_s",
+                  "relay_settle_s", "voltage_range_V", "overrange_retries",
+                  "overrange_retry_delay_s")},
+              "positive_V": [], "negative_V": []}
+    # Persist even partial raw acquisitions when stopped or a reading fails.
+    chart.x_series.raw.append(repetition)
+    chart.y_series.raw.append(record)
+    for key in _polarities(ctx, source, p):
         for _ in range(p["samples_per_polarity"]):
             _read_voltage(ctx, source, meter, route, record, key, p)
     resistance = abs(fmean(record["positive_V"]) - fmean(record["negative_V"])) / (2 * p["current_A"])
@@ -187,6 +200,27 @@ def _cleanup(source, matrix, delay):
         raise RuntimeError("Instrument cleanup failed; check output and relay state") from failures[0]
 
 
+def _preflight(ctx, source, meter, matrix, routes, p):
+    """Check every measurement route and polarity before acquiring any cycles."""
+    failures = []
+    logger.info("Van der Pauw initial check: %d routes, both current polarities", len(routes))
+    for name, route in routes.items():
+        _connect_route(ctx, matrix, route, p)
+        record = {"positive_V": [], "negative_V": []}
+        for key in _polarities(ctx, source, p):
+            try:
+                _read_voltage(ctx, source, meter, route, record, key, p)
+            except (_Compliance, _Overflow) as exc:
+                current = p["current_A"] if key == "positive_V" else -p["current_A"]
+                detail = (f"{name}, current={current:g} A, "
+                          f"relay route={' '.join(route)}: {exc}")
+                failures.append(detail)
+                logger.warning("Van der Pauw initial check failed: %s", detail)
+    if failures:
+        raise RuntimeError("Van der Pauw initial check failed; measurement aborted:\n"
+                           + "\n".join(failures))
+    logger.info("Van der Pauw initial check passed for all routes and polarities")
+
 def van_der_pauw(ctx: TaskContext) -> None:
     p = PLUGIN.parse_parameters(ctx.parameters)
     routes = relay_routes(p)  # Validate mapping before touching hardware.
@@ -211,8 +245,8 @@ def van_der_pauw(ctx: TaskContext) -> None:
         # OPC? waits for command completion, not analog settling. Ensure idle
         # first: OPC? with continuous initiation can lock up the 2182.
         meter.write(":INIT:CONT OFF")
-        meter.write(":ABOR")
-        if meter.ask("*OPC?").strip() != "1":
+        meter.stop_buffer()
+        if meter.complete.strip() != "1":
             raise RuntimeError("2182 reset did not complete")
         meter.active_channel = 1
         meter.channel_function = "voltage"
@@ -226,7 +260,7 @@ def van_der_pauw(ctx: TaskContext) -> None:
         meter.trigger_immediately()
         meter.trigger_count = 1
         meter.write(":SAMP:COUN 1")
-        if meter.ask("*OPC?").strip() != "1":
+        if meter.complete.strip() != "1":
             raise RuntimeError("2182 configuration did not complete")
         for instrument in (source, meter):
             errors = instrument.check_errors()
@@ -235,6 +269,8 @@ def van_der_pauw(ctx: TaskContext) -> None:
 
         source.source_current = p["current_A"]
         source.enable_source()
+        _preflight(ctx, source, meter, matrix, routes, p)
+        source.source_current = p["current_A"]
         for repetition in range(1, p["repetitions"] + 1):
             _wait(ctx)
             try:
@@ -270,13 +306,14 @@ def van_der_pauw(ctx: TaskContext) -> None:
 
 PLUGIN = TaskSpec(
     id="van_der_pauw", name="Van der Pauw",
-    description="RA, RB and Rs histograms with current reversal; compliance cycles are discarded.",
+    description="Initial overflow/compliance check on all routes, then RA, RB and Rs "
+                "histograms with current reversal; compliance cycles are discarded.",
     run=van_der_pauw,
     instruments={"source": "keithley6221", "meter": "keithley2182", "matrix": "relay_matrix"},
     parameters={
         "repetitions": ParameterSpec(int, 1, minimum=1),
-        "current_A": ParameterSpec(float, 1e-4, minimum=1e-12, maximum=0.105),
-        "compliance_V": ParameterSpec(float, 1.0, minimum=0.1, maximum=105),
+        "current_A": ParameterSpec(float, 10e-6, minimum=1e-12, maximum=0.105),
+        "compliance_V": ParameterSpec(float, 2.0, minimum=0.1, maximum=105),
         "nplc": ParameterSpec(float, 5.0, minimum=0.01, maximum=50),
         "samples_per_polarity": ParameterSpec(int, 1, minimum=1),
         "overrange_retries": ParameterSpec(int, 3, minimum=0, maximum=10),
